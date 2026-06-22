@@ -1,0 +1,29 @@
+{
+  "name": "@prismatic-io/example-project-structure",
+  "version": "1.0.0",
+  "description": "Recommended structure for a Prismatic repo. Includes custom components and code-native integrations.",
+  "repository": "git@github.com:prismatic-io/example-project-structure.git",
+  "license": "MIT",
+  "private": false,
+  "workspaces": [
+    "components/*",
+    "integrations/*",
+    "shared-libs/*"
+  ],
+  "scripts": {
+    "build:components": "for d in components/*/; do (cd \"$d\" && npm run build) || exit 1; done",
+    "publish:components": "for d in components/*/; do (cd \"$d\" && npm run publish) || exit 1; done",
+    "generate:manifests": "for d in components/*/; do (cd \"$d\" && npm run generate:manifest:dev) || exit 1; done",
+    "build:libs": "npm run build --workspace=@acme/shared",
+    "build:slack": "npm run build:libs && npm run build --workspace=slack",
+    "import:slack": "npm run import --workspace=slack",
+    "build:teams": "npm run build:libs && npm run build --workspace=ms-teams",
+    "import:teams": "npm run import --workspace=ms-teams",
+    "build:all": "npm run build:components && npm run build:slack && npm run build:teams",
+    "deploy:all": "npm run publish:components && npm run import:slack && npm run import:teams",
+    "setup:connections": "tsx scripts/setup-connections.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}
