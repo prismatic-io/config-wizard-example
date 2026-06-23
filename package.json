@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@jsonforms/core": "^3.8.0",
     "@prismatic-io/embedded": "^4.12.1",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-query-devtools": "^5.101.0",
+    "ajv": "^8.20.0",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.21.0",
     "next": "16.2.9",
@@ -20,6 +22,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/json-schema": "^7.0.15",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^19",

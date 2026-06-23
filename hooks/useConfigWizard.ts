@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePrismaticAuth } from "@/hooks/usePrismaticAuth";
 import { useConnectionStatus } from "@/hooks/useConnectionStatus";
@@ -38,7 +39,7 @@ import {
  *
  * It is integration-agnostic: it knows nothing about "brands". How config pages expand
  * into steps and how specific vars render are supplied by the caller via `plugins` — a
- * registry of per-config-var renderers/expanders (see lib/example/steps.ts for the brand one).
+ * registry of per-config-var renderers/expanders (see components/example/configurationPlugin.tsx).
  */
 
 /** One renderable config variable, pre-wired so a renderer stays plumbing-free. */
@@ -63,18 +64,13 @@ export interface WizardField {
   onDisconnect: () => void;
 }
 
-/** Opaque-to-engine payload a custom step carries (e.g. the brand definition). */
-export interface CustomStepMeta {
-  /** The example's own discriminator, e.g. "general" | "brand". */
-  type: string;
-  [k: string]: unknown;
-}
-
 /**
  * A step the wizard renders. A "page" step renders its config page's elements with the
  * standard per-dataType renderer. A "custom" step is contributed by a config-var plugin
- * (see `ConfigVarPlugin`): `ownerKey` is the config var that owns/renders it, and `primary`
- * marks the page's base step (which also hosts the page's non-plugin vars).
+ * (see `ConfigVarPlugin`): it carries its OWN `render` (and optional `validate`), closing over
+ * whatever data it needs — the engine never invokes `render` (the view does) and treats it as an
+ * opaque ref. `ownerKey` is the config var whose plugin produced it; `primary` marks the page's
+ * base step (which also hosts the page's non-plugin vars).
  */
 export type WizardStep =
   | { kind: "page"; id: string; label: string; pageName: string; hideIndex?: boolean }
@@ -88,8 +84,34 @@ export type WizardStep =
       ownerKey?: string;
       /** The page's base step — also renders the page's standard (non-plugin) vars. */
       primary?: boolean;
-      custom: CustomStepMeta;
+      /** This step's UI (supplied by the plugin). Held opaquely by the engine; called by the view. */
+      render: StepRender;
+      /** Readiness for this step. Return `undefined` to defer to the engine default. */
+      validate?: StepValidate;
     };
+
+/** Render context for a custom step (and for a plugin's inline `renderField`). */
+export interface StepRenderContext {
+  wizard: ConfigWizardEngine;
+  step: WizardStep;
+  /** The owning config var's pre-wired field (value/onChange/…), or undefined off-page. */
+  field: WizardField | undefined;
+}
+/** Readiness context for a custom step — reads drafts/statuses, never engine internals. */
+export interface StepValidateContext {
+  /** The owning config-var key. */
+  key: string;
+  step: WizardStep;
+  draft: (key: string) => string | undefined;
+  statusOf: (key: string) => string | null;
+}
+export type StepRender = (ctx: StepRenderContext) => ReactNode;
+export type StepValidate = (ctx: StepValidateContext) => boolean | undefined;
+/** A plugin's inline renderer for its config var (replaces ConfigVarInput where the var appears). */
+export type ConfigVarRender = (ctx: {
+  field: WizardField;
+  wizard: ConfigWizardEngine;
+}) => ReactNode;
 
 /**
  * A config var's baked page content, captured (once) the first time its host page loads.
@@ -116,28 +138,27 @@ export interface ConfigVarPluginContext {
   draft: (key: string) => string | undefined;
 }
 
-/** Per-step readiness inputs (extends the expansion context with the current step + status). */
-export interface ConfigVarValidateContext extends ConfigVarPluginContext {
-  step: WizardStep;
-  /** Live status for any config-var key on the current page. */
-  statusOf: (key: string) => string | null;
-}
-
 /**
- * A custom renderer/expander targeted at ONE config var by key. The engine renders every
- * page with standard per-dataType fields by default; a plugin lets a specific var (e.g. the
- * holistic "Configuration" var) expand its page into multiple steps (sub-pages) and own their
- * validation. Rendering of those steps is supplied separately by the view (see ConfigWizard).
+ * A self-contained plugin targeted at ONE config var by key. The engine renders every page with
+ * standard per-dataType fields by default; a plugin lets a specific var (e.g. the holistic
+ * "Configuration" var) override its rendering and/or expand its page into multiple sub-steps. Both
+ * capabilities are independent and optional:
+ *
+ * - `renderField` replaces `ConfigVarInput` wherever the var appears inline on a normal page.
+ * - `expandSteps` turns the var's host page into >=1 sub-steps, each carrying its OWN `render` and
+ *   `validate`. The view draws `step.render(...)`; the engine gates "Next" on `step.validate(...)`.
+ *
+ * A plugin may define either, both, or (degenerately) neither.
  */
 export interface ConfigVarPlugin {
+  /** Custom inline renderer for this var — used by the view in place of `ConfigVarInput`. */
+  renderField?: ConfigVarRender;
   /**
    * Expand this var's host page into >=1 steps. MUST emit a stable "primary" step even when
    * `captured` is null (its page hasn't loaded yet). The engine tags every returned step with
    * `ownerKey = key`; the first/base step is also marked `primary`.
    */
-  expandSteps: (ctx: ConfigVarPluginContext) => WizardStep[];
-  /** Readiness for a step this plugin owns. Return `undefined` to defer to the engine default. */
-  validateStep: (ctx: ConfigVarValidateContext) => boolean | undefined;
+  expandSteps?: (ctx: ConfigVarPluginContext) => WizardStep[];
 }
 
 export interface UseConfigWizardOptions {
@@ -220,7 +241,7 @@ export function useConfigWizard(
     : [];
 
   // ── Step / page derivation ──────────────────────────────────────────────────
-  // Accessor handed to plugin expandSteps / validateStep. It runs BEFORE the page query
+  // Accessor handed to plugin expandSteps / each step's validate. It runs BEFORE the page query
   // is read (the page name comes out of the steps it produces), so it resolves from edits
   // or a plugin var's captured content — deliberately NOT from the live current page's
   // content (see `effectiveValue` for that). The captured snapshot seeds the value lazily:
@@ -234,17 +255,21 @@ export function useConfigWizard(
     return undefined;
   };
 
-  // The first config var on a page that has a registered plugin (one plugin var per page).
-  const pluginKeyForPage = (page: ConfigPage): string | undefined =>
-    page.elements.find((el) => el.type === "configVar" && plugins[el.value])?.value;
+  // The first config var on a page whose plugin EXPANDS the page into steps (one such var per
+  // page). A plugin with only `renderField` (no `expandSteps`) leaves the page as a normal step
+  // and just renders its var inline — so it doesn't count here.
+  const expandingKeyForPage = (page: ConfigPage): string | undefined =>
+    page.elements.find(
+      (el) => el.type === "configVar" && plugins[el.value]?.expandSteps,
+    )?.value;
 
-  // Build steps: each page is one "page" step, unless it hosts a plugin var — then the
+  // Build steps: each page is one "page" step, unless it hosts an expanding plugin var — then the
   // plugin expands that page into >=1 steps, each tagged with `ownerKey` (the base one
   // also `primary`). Pure + deterministic; recomputed every render.
   const steps: WizardStep[] = pages.flatMap((page) => {
-    const key = pluginKeyForPage(page);
+    const key = expandingKeyForPage(page);
     if (key) {
-      const expanded = plugins[key].expandSteps({
+      const expanded = plugins[key].expandSteps!({
         key,
         page,
         captured: captured[key] ?? null,
@@ -431,8 +456,8 @@ export function useConfigWizard(
 
   // ── Readiness / navigation ─────────────────────────────────────────────────────
   // Whether the current step is satisfied enough to advance. A plugin-owned step defers
-  // to its plugin's `validateStep`; the page's standard (non-plugin) vars are gated by the
-  // engine default. A plain "page" step uses the default for all of its vars.
+  // to its own `validate`; the page's standard (non-plugin) vars are gated by the engine
+  // default. A plain "page" step uses the default for all of its vars.
   const varReady = (cv: PageConfigVariable): boolean => {
     const key = cv.requiredConfigVariable.key;
     if (cv.requiredConfigVariable.dataType === "CONNECTION") {
@@ -440,31 +465,34 @@ export function useConfigWizard(
     }
     return (effectiveValue(key) ?? "").trim().length > 0;
   };
-  // Default readiness over the page's vars, optionally skipping plugin-owned keys.
-  const defaultReady = (skipPluginVars = false): boolean => {
+  // Default readiness over the page's vars, optionally skipping vars whose plugin expands the page
+  // into its own (separately-gated) steps. A renderField-only var is gated normally.
+  const defaultReady = (skipExpandingVars = false): boolean => {
     if (!pageContent || !currentStep) return false;
     return pageVars.every(
       (cv) =>
-        (skipPluginVars && plugins[cv.requiredConfigVariable.key]) || varReady(cv),
+        (skipExpandingVars &&
+          Boolean(plugins[cv.requiredConfigVariable.key]?.expandSteps)) ||
+        varReady(cv),
     );
   };
   const ready = (() => {
     if (!pageContent || !currentStep) return false;
     const ownerKey =
       currentStep.kind === "custom" ? currentStep.ownerKey : undefined;
-    if (ownerKey && plugins[ownerKey]) {
-      const pluginReady =
-        plugins[ownerKey].validateStep({
+    if (ownerKey && currentStep.kind === "custom") {
+      // A custom step's own readiness comes from its `validate` (or the engine default).
+      const stepReady =
+        currentStep.validate?.({
           key: ownerKey,
-          page: currentConfigPage as ConfigPage,
-          captured: captured[ownerKey] ?? null,
-          draft: draftOf,
           step: currentStep,
+          draft: draftOf,
           statusOf: statusOfKey,
         }) ?? defaultReady(true);
       // The primary step also hosts the page's standard vars — gate on those too.
-      const isPrimary = currentStep.kind === "custom" && currentStep.primary === true;
-      return isPrimary ? pluginReady && defaultReady(true) : pluginReady;
+      return currentStep.primary === true
+        ? stepReady && defaultReady(true)
+        : stepReady;
     }
     return defaultReady();
   })();

@@ -34,24 +34,37 @@ export const parseSelection = (
     : {};
 };
 
-/** Build one delivery field's JSON-schema node. The wizard control shows option LABELS. */
-const deliveryFieldNode = (field: DeliveryFieldSpec): Record<string, unknown> => {
-  const labels = field.options.map((o) => o.label);
-  if (field.multi) {
-    return {
-      type: "array",
-      title: field.label,
-      items:
-        labels.length > 0
-          ? { type: "string", enum: labels }
-          : { type: "string" }, // free-text multi-select
-    };
-  }
-  // Single value: a dropdown when there are options, otherwise a free-text input (quiet hours).
-  return labels.length > 0
-    ? { type: "string", title: field.label, enum: labels }
-    : { type: "string", title: field.label };
+/**
+ * Build a picklist JSON-schema node under ONE convention shared by channels and delivery fields: the
+ * standard `enum` carries the option VALUES (so ajv can validate the stored data) and the non-standard
+ * `options` extension carries the {key,label} pairs the wizard renders. Empty options ⇒ a free-text
+ * input (single) or free-text multi-select (multi).
+ */
+const optionsNode = (
+  options: { key: string; label: string }[],
+  { multi, title, icon }: { multi: boolean; title: string; icon?: string },
+): Record<string, unknown> => {
+  const keys = options.map((o) => o.key);
+  const node: Record<string, unknown> = multi
+    ? {
+        type: "array",
+        title,
+        items: keys.length > 0 ? { type: "string", enum: keys } : { type: "string" },
+      }
+    : keys.length > 0
+      ? { type: "string", title, enum: keys }
+      : { type: "string", title };
+  if (options.length > 0) node.options = options;
+  if (icon) node["x-icon"] = icon;
+  return node;
 };
+
+/** Build one delivery field's node. `DeliveryOption.value` is the stored value; `label` is displayed. */
+const deliveryFieldNode = (field: DeliveryFieldSpec): Record<string, unknown> =>
+  optionsNode(
+    field.options.map((o) => ({ key: o.value, label: o.label })),
+    { multi: field.multi, title: field.label },
+  );
 
 /**
  * Builds the single holistic Configuration jsonForm rendered by the custom config wizard, from the list of
@@ -70,14 +83,11 @@ export const buildConfigForm = (
   const properties: Record<string, unknown> = {};
   const data: Record<string, unknown> = {};
 
-  const channelsNode: Record<string, unknown> = {
-    type: "array",
+  const channelsNode = optionsNode(adapter.channelOptions, {
+    multi: true,
     title: adapter.channelTitle,
-    items: { type: "string", enum: adapter.channelOptions.map((c) => c.key) },
-    // Non-standard carriers the wizard reads: option labels + an icon hint.
-    options: adapter.channelOptions,
-  };
-  if (adapter.channelIcon) channelsNode["x-icon"] = adapter.channelIcon;
+    icon: adapter.channelIcon,
+  });
 
   for (const { category, delivery } of modules) {
     const fieldProps: Record<string, unknown> = { channels: { ...channelsNode } };

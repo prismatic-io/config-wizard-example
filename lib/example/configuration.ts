@@ -6,25 +6,18 @@
 // category, each with an enable toggle plus a `delivery` group (destination channels +
 // delivery mode + minimum level + quiet hours). `parseConfiguration` normalizes that
 // schema into a `CategoryConfig[]` the wizard's custom steps render. None of this is
-// known to the generic engine — swap this file (and lib/example/steps.ts) for your own
+// known to the generic engine — swap this file (and components/example/configurationPlugin.tsx) for your own
 // schema and the engine is unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
   jsonFormSchema,
   nodeOptions,
+  describeField,
+  type FieldDescriptor,
+  type WizardSchema,
   type PicklistOption,
 } from "@/lib/prismatic";
-
-/** A single delivery-rule field rendered as a control in a per-category Delivery step. */
-export interface DeliveryFieldSchema {
-  key: string;
-  label: string;
-  options: PicklistOption[];
-  /** Multi-select (array) vs single value (string). */
-  multi: boolean;
-  required: boolean;
-}
 
 /**
  * One notification category parsed from the single holistic "Configuration" jsonForm. Carries the
@@ -44,7 +37,7 @@ export interface CategoryConfig {
   /** Icon hint the wizard maps to a lucide icon (e.g. "hash"). */
   channelIcon?: string;
   /** The delivery-rule fields other than channels (mode, minimum level, quiet hours, …). */
-  deliveryFields: DeliveryFieldSchema[];
+  deliveryFields: FieldDescriptor[];
 }
 
 /**
@@ -55,33 +48,36 @@ export interface CategoryConfig {
  */
 export function parseConfiguration(content: unknown): CategoryConfig[] {
   const properties = jsonFormSchema(content)?.properties;
-  if (!properties || typeof properties !== "object") return [];
+  if (!properties) return [];
 
   const categories: CategoryConfig[] = [];
-  for (const [key, node] of Object.entries(properties)) {
-    const delivery = node?.properties?.delivery;
-    if (node?.type !== "object" || !node.properties?.enabled || !delivery?.properties) {
+  for (const [key, node] of Object.entries(properties) as [string, WizardSchema][]) {
+    const delivery = node.properties?.delivery as WizardSchema | undefined;
+    // A category is an object with an `enabled` toggle and a `delivery` group; anything else isn't one.
+    if (
+      node.type !== "object" ||
+      typeof node.title !== "string" ||
+      !node.properties?.enabled ||
+      !delivery?.properties
+    ) {
       continue;
     }
-    const channelsNode = delivery.properties.channels;
-    const required = delivery.required ?? [];
+    const channelsNode = delivery.properties.channels as WizardSchema | undefined;
+    const deliveryRequired = delivery.required ?? [];
 
-    // Every delivery property except `channels` (handled specially, with live options) is a field.
-    const deliveryFields: DeliveryFieldSchema[] = Object.entries(delivery.properties)
+    // Every delivery property except `channels` (rendered specially, with live options) is a field.
+    const deliveryFields = Object.entries(delivery.properties)
       .filter(([fieldKey]) => fieldKey !== "channels")
-      .map(([fieldKey, fieldNode]) => ({
-        key: fieldKey,
-        label: fieldNode?.title ?? fieldKey,
-        options: nodeOptions(fieldNode),
-        multi: fieldNode?.type === "array",
-        required: required.includes(fieldKey),
-      }));
+      .map(([fieldKey, fieldNode]) =>
+        describeField(fieldKey, fieldNode as WizardSchema, deliveryRequired),
+      )
+      .filter((field): field is FieldDescriptor => field !== null);
 
     categories.push({
       key,
-      label: node.title ?? key,
+      label: node.title,
       description: node.description,
-      channelOptions: channelsNode?.options ?? [],
+      channelOptions: nodeOptions(channelsNode),
       channelLabel: channelsNode?.title,
       channelIcon: channelsNode?.["x-icon"],
       deliveryFields,
