@@ -1,18 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { CheckCircle2, Sparkles } from "lucide-react";
 import {
   useConfigWizard,
+  type ConfigVarPlugin,
   type ConfigWizardEngine,
-  type WizardField,
-  type WizardStep,
 } from "@/hooks/useConfigWizard";
-import { type CategoryConfig } from "@/lib/example/configuration";
-import { CONFIGURATION_KEY, configurationPlugin } from "@/lib/example/steps";
-import { CategorySelector } from "@/components/example/CategorySelector";
-import { DeliveryStep } from "@/components/example/DeliveryStep";
+import { CONFIGURATION_KEY, configurationPlugin } from "@/components/example/configurationPlugin";
 import { ConfigVarInput } from "@/components/wizard/fields/ConfigVarInput";
 import { Shell } from "@/components/wizard/chrome/Shell";
 import { Stepper } from "@/components/wizard/chrome/Stepper";
@@ -24,15 +19,22 @@ interface ConfigWizardProps {
 }
 
 /**
+ * The wizard's plugin registry — the single source of truth for both halves of the plugin model:
+ * the engine reads `expandSteps` (step expansion + per-step validation) and the view reads
+ * `renderField` / each step's `render`. Add an integration's plugins here.
+ */
+const plugins: Record<string, ConfigVarPlugin> = {
+  [CONFIGURATION_KEY]: configurationPlugin,
+};
+
+/**
  * Interactive, multi-step config wizard. All Prismatic state lives in `useConfigWizard`;
  * this component renders from the engine and registers the "Configuration" plugin (which
  * expands its page into a category-selection step + one delivery step per enabled category).
  * Every other config var renders with the engine's standard per-dataType field.
  */
 export function ConfigWizard({ instanceId }: ConfigWizardProps) {
-  const wizard = useConfigWizard(instanceId, {
-    plugins: { [CONFIGURATION_KEY]: configurationPlugin },
-  });
+  const wizard = useConfigWizard(instanceId, { plugins });
 
   if (!wizard.authenticated) {
     return (
@@ -141,42 +143,9 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
 }
 
 /**
- * Custom renderers keyed by config-var key — the view half of the engine's plugin model
- * (rendering is JSX, so it lives here, not in the hook). A step owned by one of these keys
- * is drawn by its renderer; everything else uses the standard `ConfigVarInput`.
+ * Standard rendering of a page's elements in order — HTML blurbs + one input per config var. A var
+ * whose plugin supplies a `renderField` is drawn with it; everything else uses `ConfigVarInput`.
  */
-type CustomRenderer = (props: {
-  wizard: ConfigWizardEngine;
-  step: WizardStep;
-  field: WizardField | undefined;
-}) => ReactNode;
-
-const customRenderers: Record<string, CustomRenderer> = {
-  [CONFIGURATION_KEY]: ({ step, field }) => {
-    if (step.kind !== "custom" || !field) return null;
-    if (step.custom.type === "general") {
-      return (
-        <CategorySelector
-          categories={step.custom.categories as CategoryConfig[]}
-          value={field.value}
-          onChange={field.onChange}
-        />
-      );
-    }
-    if (step.custom.type === "category") {
-      return (
-        <DeliveryStep
-          definition={step.custom.category as CategoryConfig}
-          value={field.value}
-          onChange={field.onChange}
-        />
-      );
-    }
-    return null;
-  },
-};
-
-/** Standard rendering of a page's elements in order — HTML blurbs + one input per config var. */
 function PageElements({
   wizard,
   excludeKey,
@@ -205,7 +174,14 @@ function PageElements({
               </p>
             );
           }
-          return <ConfigVarInput key={f.key} field={f} busy={wizard.busy} />;
+          const renderField = plugins[el.value]?.renderField;
+          return (
+            <div key={f.key}>
+              {renderField ? renderField({ field: f, wizard }) : (
+                <ConfigVarInput field={f} busy={wizard.busy} />
+              )}
+            </div>
+          );
         }
         return null;
       })}
@@ -213,23 +189,22 @@ function PageElements({
   );
 }
 
-/** Renders the body for the current step (a plugin's custom UI, or a standard page). */
+/** Renders the body for the current step (a plugin step's own UI, or a standard page). */
 function StepBody({ wizard }: { wizard: ConfigWizardEngine }) {
   const step = wizard.step;
   if (!step) return null;
 
-  // A step owned by a registered config-var plugin: draw its custom UI. The page's base
-  // ("primary") step also hosts the page's other (non-plugin) vars via standard rendering.
-  if (step.kind === "custom" && step.ownerKey && customRenderers[step.ownerKey]) {
-    const ownerKey = step.ownerKey;
-    const field = wizard.field(ownerKey);
+  // A plugin-owned custom step draws its OWN `render`. The page's base ("primary") step also hosts
+  // the page's other (non-plugin) vars via standard rendering.
+  if (step.kind === "custom" && step.ownerKey) {
+    const field = wizard.field(step.ownerKey);
     return (
       <div className="flex flex-col gap-4">
         {step.primary && wizard.page?.tagline && (
           <p className="text-sm text-white/50">{wizard.page.tagline}</p>
         )}
-        {customRenderers[ownerKey]({ wizard, step, field })}
-        {step.primary && <PageElements wizard={wizard} excludeKey={ownerKey} />}
+        {step.render({ wizard, step, field })}
+        {step.primary && <PageElements wizard={wizard} excludeKey={step.ownerKey} />}
       </div>
     );
   }

@@ -3,8 +3,9 @@
 // Generic field renderer — no brand knowledge. Renders ONE config variable from its
 // pre-wired WizardField (value/onChange/status/options/authorizeUrl/onDisconnect),
 // branching on data type: a CONNECTION as the OAuth connect/disconnect panel, a
-// PICKLIST as a select, a JSONFORM via JsonFormRenderer (textarea fallback), and
-// everything else as a text input. Purely presentational — it owns no wizard state.
+// PICKLIST as a select, a JSONFORM via JsonFormRenderer (which owns its own raw-JSON
+// escape hatch), and everything else as a text input. Purely presentational — it owns
+// no wizard state.
 
 import {
   CheckCircle2,
@@ -12,7 +13,6 @@ import {
   MonitorDot,
   Sparkles,
 } from "lucide-react";
-import { parseJsonForm } from "@/lib/prismatic";
 import type { WizardField } from "@/hooks/useConfigWizard";
 import { JsonFormRenderer } from "@/components/wizard/fields/JsonFormRenderer";
 
@@ -100,18 +100,9 @@ export function ConfigVarInput({
         </div>
       )}
 
-      {dataType === "JSONFORM" &&
-        (parseJsonForm(content).length > 0 ? (
-          <JsonFormRenderer content={content} value={value} onChange={onChange} />
-        ) : (
-          <textarea
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            rows={8}
-            spellCheck={false}
-            className="rounded-md border border-white/15 bg-white/[0.04] px-3 py-2 font-mono text-xs text-white/90 focus:border-primary focus:outline-none"
-          />
-        ))}
+      {dataType === "JSONFORM" && (
+        <JsonFormRenderer content={content} value={value} onChange={onChange} />
+      )}
 
       {dataType !== "CONNECTION" &&
         dataType !== "PICKLIST" &&

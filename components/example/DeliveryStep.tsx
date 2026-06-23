@@ -7,7 +7,6 @@
 // different integration.
 
 import {
-  ChevronDown,
   Hash,
   Mail,
   MessageCircle,
@@ -15,9 +14,10 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { CategoryConfig, DeliveryFieldSchema } from "@/lib/example/configuration";
+import type { CategoryConfig } from "@/lib/example/configuration";
 import { useJsonDraft } from "@/hooks/useJsonDraft";
 import { MultiSelect } from "@/components/wizard/fields/MultiSelect";
+import { FieldControl } from "@/components/wizard/fields/FieldControl";
 
 /** Map an integration-supplied icon hint to a lucide icon (default: channel hash). */
 const CHANNEL_ICONS: Record<string, LucideIcon> = {
@@ -91,73 +91,15 @@ export function DeliveryStep({ definition, value, onChange }: DeliveryStepProps)
 
       <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
         {definition.deliveryFields.map((field) => (
-          <DeliveryField
+          <FieldControl
             key={field.key}
             field={field}
             value={delivery[field.key]}
-            onChange={(v) => setDelivery({ [field.key]: v })}
+            onChange={(v) => setDelivery({ [field.key]: v as FieldValue })}
+            placeholder="HH:MM"
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-/**
- * One labeled delivery control — multi-select (with free-text when no options), single-select dropdown
- * when the field has options (mode, minimum level), or a free-text input when it has none (quiet hours).
- */
-function DeliveryField({
-  field,
-  value,
-  onChange,
-}: {
-  field: DeliveryFieldSchema;
-  value: FieldValue | undefined;
-  onChange: (next: FieldValue) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs text-white/60">
-        {field.label}
-        {field.required && <span className="text-red-400"> *</span>}
-      </label>
-      {field.multi ? (
-        <MultiSelect
-          options={field.options}
-          value={Array.isArray(value) ? value : []}
-          onChange={onChange}
-          placeholder="Select"
-          allowCustom={field.options.length === 0}
-        />
-      ) : field.options.length > 0 ? (
-        <div className="relative">
-          <select
-            value={typeof value === "string" ? value : ""}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full appearance-none rounded-md border border-white/15 bg-white/[0.04] py-2 pl-3 pr-9 text-sm text-white/90 focus:border-primary focus:outline-none"
-          >
-            <option value="">Select</option>
-            {field.options.map((opt) => (
-              <option key={opt.key} value={opt.key}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={16}
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40"
-          />
-        </div>
-      ) : (
-        <input
-          type="text"
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="HH:MM"
-          className="w-full rounded-md border border-white/15 bg-white/[0.04] px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-primary focus:outline-none"
-        />
-      )}
     </div>
   );
 }
