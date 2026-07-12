@@ -1,50 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Plus } from "lucide-react";
 import {
-  integrationStatus,
+  instanceDisplayStatus,
   resolveAvatarUrl,
-  updateAvailability,
   type MarketplaceIntegration,
 } from "@/lib/marketplace";
 import {
   createInstanceForIntegration,
-  resolveInstanceId,
-  setInstanceEnabled,
-  updateInstanceVersion,
+  prismaticKeys,
+  type InstanceSummary,
 } from "@/lib/prismatic";
+import { formatShortDate } from "@/lib/format";
+import { InstanceStatusIcon } from "@/components/InstanceStatusIcon";
+import { NewInstanceDialog } from "@/components/NewInstanceDialog";
 
-const TONE_CLASSES = {
-  active: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  configured: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  inactive: "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60",
-} as const;
+/** How many instance rows the card previews before deferring to "View All". */
+const MAX_ROWS = 3;
 
 interface IntegrationCardProps {
   integration: MarketplaceIntegration;
+  /** This customer's instances of this integration (may be empty). */
+  instances: InstanceSummary[];
   /** Embedded JWT, used to resolve the avatar presigned URL. */
   token: string | null;
-  /** Called after a mutation (update/pause/resume) so the marketplace can refetch. */
-  onMutated?: () => void;
 }
 
 export function IntegrationCard({
   integration,
+  instances,
   token,
-  onMutated,
 }: IntegrationCardProps) {
   const router = useRouter();
-  const status = integrationStatus(integration);
-  const isConfigured = integration.deployedInstances !== "ZERO";
-  const instanceId = integration.firstDeployedInstance?.id ?? null;
-  const { available: updateReady, targetIntegrationId } =
-    updateAvailability(integration);
-  const deploymentStatus = integration.deploymentStatus;
+  const queryClient = useQueryClient();
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
-  const [opening, setOpening] = useState(false);
-  const [toggling, setToggling] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const multiAllowed = integration.allowMultipleMarketplaceInstances;
+  const count = instances.length;
+  // Newest first, like the marketplace mock; the fetch sorts oldest-first.
+  const preview = [...instances].reverse().slice(0, MAX_ROWS);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,76 +58,62 @@ export function IntegrationCard({
   }, [integration.avatarUrl, token]);
 
   /**
-   * Open OUR custom config wizard. Resolve the instanceId for this integration, or
-   * create an instance for the customer when none exists yet, then route to the
-   * dedicated wizard page.
+   * One-click "Connect" for single-instance integrations: create the instance
+   * with the default name and go straight to its config wizard.
    */
-  async function openConfigWizard() {
-    setOpening(true);
-    setNote(null);
-    try {
-      let instanceId = await resolveInstanceId(integration);
-      if (!instanceId) {
-        instanceId = await createInstanceForIntegration(integration);
-      }
+  const connectMutation = useMutation({
+    mutationFn: () => createInstanceForIntegration(integration),
+    onSuccess: async (instanceId) => {
+      await queryClient.invalidateQueries({
+        queryKey: prismaticKeys.instances(),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: prismaticKeys.marketplace(),
+      });
       router.push(`/integrations/configure/${encodeURIComponent(instanceId)}`);
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
-    } finally {
-      setOpening(false);
-    }
-  }
-
-  /**
-   * Move the deployed instance to the newer marketplace version, then open the
-   * wizard so the customer can review/configure any new fields (config pages are
-   * refetched fresh on the wizard page).
-   */
-  async function handleUpdate() {
-    if (!instanceId || !targetIntegrationId) return;
-    setOpening(true);
-    setNote(null);
-    try {
-      await updateInstanceVersion(instanceId, targetIntegrationId);
-      router.push(`/integrations/configure/${encodeURIComponent(instanceId)}`);
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
-      setOpening(false);
-    }
-  }
-
-  /** Pause (enabled: false) or resume (enabled: true) the deployed instance. */
-  async function handleToggleEnabled(enabled: boolean) {
-    if (!instanceId) return;
-    setToggling(true);
-    setNote(null);
-    try {
-      await setInstanceEnabled(instanceId, enabled);
-      onMutated?.();
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
-    } finally {
-      setToggling(false);
-    }
-  }
+    },
+  });
+  const connecting = connectMutation.isPending || connectMutation.isSuccess;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-black/10 p-4 dark:border-white/15">
-      <div className="flex items-start gap-3">
+      <div className="flex items-start justify-between gap-3">
         <Avatar src={avatarSrc} name={integration.name} />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate font-medium">{integration.name}</h3>
-          {integration.category && (
-            <p className="text-xs text-black/50 dark:text-white/50">
-              {integration.category}
-            </p>
+        {multiAllowed ? (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          >
+            Add Integration
+            <Plus size={14} />
+          </button>
+        ) : (
+          count === 0 && (
+            <button
+              onClick={() => connectMutation.mutate()}
+              disabled={connecting}
+              className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {connecting ? "Connecting…" : "Connect"}
+            </button>
+          )
+        )}
+      </div>
+
+      <div className="min-w-0">
+        <h3 className="truncate font-medium">
+          {integration.name}
+          {multiAllowed && count > 0 && (
+            <span className="ml-1.5 font-normal text-black/50 dark:text-white/50">
+              ({count})
+            </span>
           )}
-        </div>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE_CLASSES[status.tone]}`}
-        >
-          {status.label}
-        </span>
+        </h3>
+        {integration.category && (
+          <p className="text-xs text-black/50 dark:text-white/50">
+            {integration.category}
+          </p>
+        )}
       </div>
 
       {integration.description && (
@@ -137,54 +122,60 @@ export function IntegrationCard({
         </p>
       )}
 
-      {updateReady && (
-        <button
-          onClick={handleUpdate}
-          disabled={opening || toggling}
-          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {opening ? "Updating…" : "Update available"}
-        </button>
+      {connectMutation.error && (
+        <p className="text-xs text-red-700 dark:text-red-400">
+          {connectMutation.error instanceof Error
+            ? connectMutation.error.message
+            : String(connectMutation.error)}
+        </p>
       )}
 
-      <button
-        onClick={openConfigWizard}
-        disabled={opening || toggling}
-        className="mt-auto rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-      >
-        {opening ? "Opening…" : isConfigured ? "Manage" : "Connect"}
-      </button>
+      <div className="mt-auto border-t border-black/10 pt-3 dark:border-white/15">
+        {count === 0 ? (
+          <p className="text-sm text-black/40 dark:text-white/40">
+            No instances created
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {preview.map((instance) => (
+              <Link
+                key={instance.id}
+                href={`/integrations/configure/${encodeURIComponent(instance.id)}`}
+                className="flex items-center gap-3 rounded-md px-1 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                <span className="min-w-0 flex-1 truncate">{instance.name}</span>
+                <span className="shrink-0 text-black/50 dark:text-white/50">
+                  {formatShortDate(instance.lastDeployedAt ?? instance.createdAt)}
+                </span>
+                <InstanceStatusIcon status={instanceDisplayStatus(instance)} />
+              </Link>
+            ))}
+            <Link
+              href={`/integrations/${encodeURIComponent(integration.id)}`}
+              className="mt-1 flex items-center justify-end gap-1 text-sm font-medium hover:underline"
+            >
+              View All
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+        )}
+      </div>
 
-      {deploymentStatus === "ACTIVATED" && (
-        <button
-          onClick={() => handleToggleEnabled(false)}
-          disabled={opening || toggling}
-          className="text-xs text-black/50 hover:text-black/80 disabled:opacity-50 dark:text-white/50 dark:hover:text-white/80"
-        >
-          {toggling ? "Disabling…" : "Disable integration"}
-        </button>
-      )}
-      {deploymentStatus === "PAUSED" && (
-        <button
-          onClick={() => handleToggleEnabled(true)}
-          disabled={opening || toggling}
-          className="text-xs font-medium text-green-700 hover:text-green-800 disabled:opacity-50 dark:text-green-400 dark:hover:text-green-300"
-        >
-          {toggling ? "Enabling…" : "Enable integration"}
-        </button>
-      )}
-
-      {note && (
-        <p className="text-xs text-black/50 dark:text-white/50">{note}</p>
+      {adding && (
+        <NewInstanceDialog
+          integration={integration}
+          existingCount={count}
+          onClose={() => setAdding(false)}
+        />
       )}
     </div>
   );
 }
 
-function Avatar({ src, name }: { src: string | null; name: string }) {
+export function Avatar({ src, name }: { src: string | null; name: string }) {
   if (src) {
-    // eslint-disable-next-line @next/next/no-img-element -- presigned S3 URL, not a static asset
     return (
+      // eslint-disable-next-line @next/next/no-img-element -- presigned S3 URL, not a static asset
       <img
         src={src}
         alt=""

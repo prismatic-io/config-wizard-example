@@ -10,6 +10,8 @@ export const prismaticKeys = {
   token: () => ["prismatic", "token"] as const,
   /** The marketplace integration list. */
   marketplace: () => ["prismatic", "marketplace"] as const,
+  /** All of the customer's instances (grouped per integration in the UI). */
+  instances: () => ["prismatic", "instances"] as const,
   /** The configuration-wizard instance + its config pages. */
   instance: (instanceId: string) =>
     ["prismatic", "instance", instanceId] as const,

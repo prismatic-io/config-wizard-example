@@ -1,18 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic Prismatic plumbing — no brand, no React. Safe to copy verbatim into any
 // integration. Instance read + lifecycle write operations: hydrate the wizard,
-// resolve/create an instance, deploy it, disconnect a connection, move versions,
-// and pause/resume. Each call goes through `graphql` and surfaces both
-// transport errors and the mutation's own `errors` array.
+// list the customer's instances, create/delete an instance, deploy it, disconnect
+// a connection, move versions, and pause/resume. Each call goes through `graphql`
+// and surfaces both transport errors and the mutation's own `errors` array.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { MarketplaceIntegration } from "@/lib/marketplace";
 import { graphql, throwIfApiError } from "./client";
 import {
   CREATE_INSTANCE,
+  DELETE_INSTANCE,
   DEPLOY_INSTANCE,
   DISCONNECT_CONNECTION,
   GET_CONFIGURATION_WIZARD_INSTANCE,
+  GET_CUSTOMER_INSTANCES,
   SET_INSTANCE_ENABLED,
   UPDATE_INSTANCE_VERSION,
 } from "./queries";
@@ -42,38 +44,52 @@ export async function fetchConfigurationWizardInstance(
   return result.data;
 }
 
-/**
- * Resolves an instanceId for a marketplace integration. Prefers the already-known
- * `firstDeployedInstance`; otherwise queries the customer's instances for this
- * integration (scoped to the customer by the JWT). Returns null when the customer
- * has no instance yet — instance creation is a future step.
- */
-export async function resolveInstanceId(
-  integration: Pick<MarketplaceIntegration, "id" | "firstDeployedInstance">,
-): Promise<string | null> {
-  if (integration.firstDeployedInstance?.id) {
-    return integration.firstDeployedInstance.id;
-  }
+/** How far an instance's configuration has progressed. */
+export type InstanceConfigState =
+  | "NEEDS_INSTANCE_CONFIGURATION"
+  | "NEEDS_USER_LEVEL_CONFIGURATION"
+  | "FULLY_CONFIGURED";
 
-  const result = await graphql<{
-    instances: Node<{ id: string }>;
-  }>({
-    query: /* GraphQL */ `
-      query getInstanceForIntegration($integrationId: ID!) {
-        instances(integration: $integrationId) {
-          nodes {
-            id
-          }
-        }
-      }
-    `,
-    variables: { integrationId: integration.id },
+/**
+ * One of the customer's instances, as returned by `getCustomerInstances` — the
+ * fields the marketplace UI needs to list, match, and act on instances.
+ */
+export interface InstanceSummary {
+  id: string;
+  name: string;
+  enabled: boolean;
+  createdAt: string;
+  /** Null until the instance has been deployed at least once. */
+  lastDeployedAt: string | null;
+  configState: InstanceConfigState;
+  isCustomerUpgradeable: boolean;
+  integration: {
+    id: string;
+    versionNumber: number;
+    /** Stable across all versions of an integration — the key for matching an
+     * instance to its marketplace integration. */
+    versionSequenceId: string;
+    /** Latest AVAILABLE marketplace version (first node), if any. */
+    versionSequence: { nodes: { id: string; versionNumber: number }[] };
+  };
+}
+
+/**
+ * Fetches every instance the active customer owns (the JWT scopes the query),
+ * oldest first. The marketplace groups these per integration via
+ * `versionSequenceId`. Throws on errors.
+ */
+export async function fetchCustomerInstances(): Promise<InstanceSummary[]> {
+  const result = await graphql<{ instances: Node<InstanceSummary> }>({
+    query: GET_CUSTOMER_INSTANCES,
   });
 
   if (result.errors?.length) {
     throw new Error(result.errors.map((e) => e.message).join("; "));
   }
-  return result.data.instances.nodes[0]?.id ?? null;
+  return [...result.data.instances.nodes].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  );
 }
 
 /**
@@ -114,18 +130,24 @@ interface CreateInstanceData {
 }
 
 /**
- * Creates an instance of a marketplace integration for the active customer, named
- * after the integration. Used when the customer has no instance yet (the "Connect"
- * action). The integration ID deploys its latest published version — no version id is
- * required. Returns the new instance id. Throws on errors.
+ * Creates an instance of a marketplace integration for the active customer —
+ * named `name` when given (the "Add Integration" dialog), else after the
+ * integration (the one-click "Connect" action). The integration ID deploys its
+ * latest published version — no version id is required. Returns the new instance
+ * id. Throws on errors.
  */
 export async function createInstanceForIntegration(
   integration: Pick<MarketplaceIntegration, "id" | "name">,
+  name?: string,
 ): Promise<string> {
   const customer = await fetchCurrentCustomerId();
   const result = await graphql<CreateInstanceData>({
     query: CREATE_INSTANCE,
-    variables: { integration: integration.id, customer, name: integration.name },
+    variables: {
+      integration: integration.id,
+      customer,
+      name: name?.trim() || integration.name,
+    },
   });
 
   if (result.errors?.length) {
@@ -164,6 +186,34 @@ export async function deployInstance(instanceId: string): Promise<void> {
   }
   throwIfApiError(result);
   const errs = result.data.deployInstance.errors;
+  if (errs?.length) {
+    throw new Error(
+      errs.map((e) => `${e.field}: ${e.messages.join(", ")}`).join("; "),
+    );
+  }
+}
+
+interface DeleteInstanceData {
+  deleteInstance: {
+    instance: { id: string } | null;
+    errors: { field: string; messages: string[] }[];
+  };
+}
+
+/**
+ * Permanently deletes an instance (its configuration included). Throws on errors.
+ */
+export async function deleteInstance(instanceId: string): Promise<void> {
+  const result = await graphql<DeleteInstanceData>({
+    query: DELETE_INSTANCE,
+    variables: { instanceId },
+  });
+
+  if (result.errors?.length) {
+    throw new Error(result.errors.map((e) => e.message).join("; "));
+  }
+  throwIfApiError(result);
+  const errs = result.data.deleteInstance.errors;
   if (errs?.length) {
     throw new Error(
       errs.map((e) => `${e.field}: ${e.messages.join(", ")}`).join("; "),

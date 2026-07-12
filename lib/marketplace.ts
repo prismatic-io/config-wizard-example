@@ -1,23 +1,5 @@
 import prismatic from "@prismatic-io/embedded";
-
-interface IntegrationVersionNode {
-  id: string;
-  versionNumber: number;
-}
-
-/** The customer's deployed instance for an integration, with the info needed to
- * decide whether an update is available and whether it's currently enabled. */
-export interface FirstDeployedInstance {
-  id: string;
-  enabled: boolean;
-  isCustomerUpgradeable: boolean;
-  integration: {
-    id: string;
-    versionNumber: number;
-    /** Latest AVAILABLE marketplace version (first node), if any. */
-    versionSequence: { nodes: IntegrationVersionNode[] };
-  };
-}
+import type { InstanceSummary } from "@/lib/prismatic/instance";
 
 /** A marketplace integration as returned by the `marketplaceIntegrations` query. */
 export interface MarketplaceIntegration {
@@ -27,11 +9,9 @@ export interface MarketplaceIntegration {
   category: string;
   avatarUrl?: string | null;
   allowMultipleMarketplaceInstances: boolean;
-  /** "ZERO" — not configured; "ONE" — one instance; "MULTIPLE" — several. */
-  deployedInstances: "ZERO" | "ONE" | "MULTIPLE";
-  /** Null when not deployed. */
-  deploymentStatus: "ACTIVATED" | "PAUSED" | "UNCONFIGURED" | null;
-  firstDeployedInstance?: FirstDeployedInstance | null;
+  /** Stable across all versions of this integration — the key that matches the
+   * customer's instances (see `groupInstancesByIntegration`). */
+  versionSequenceId: string;
 }
 
 interface MarketplaceIntegrationsData {
@@ -48,27 +28,7 @@ const GET_MARKETPLACE_INTEGRATIONS = /* GraphQL */ `
         category
         avatarUrl
         allowMultipleMarketplaceInstances
-        deployedInstances
-        deploymentStatus
-        firstDeployedInstance {
-          id
-          enabled
-          isCustomerUpgradeable
-          integration {
-            id
-            versionNumber
-            versionSequence(
-              first: 1
-              marketplaceConfiguration_Istartswith: "AVAILABLE"
-              orderBy: { direction: DESC, field: VERSION_NUMBER }
-            ) {
-              nodes {
-                id
-                versionNumber
-              }
-            }
-          }
-        }
+        versionSequenceId
       }
     }
   }
@@ -122,43 +82,90 @@ export async function resolveAvatarUrl(
   }
 }
 
-/** Derives a human-readable status label + tone from the deployment fields. */
-export function integrationStatus(integration: MarketplaceIntegration): {
-  label: string;
-  tone: "active" | "configured" | "inactive";
-} {
-  if (integration.deploymentStatus === "ACTIVATED") {
-    return { label: "Active", tone: "active" };
+/**
+ * Groups the customer's instances by marketplace integration id. An instance
+ * points at the integration *version* it was deployed from, so its
+ * `integration.id` won't match a marketplace node that has since published a
+ * newer version — `versionSequenceId` is the identity that survives versioning,
+ * so instances are matched on that.
+ */
+export function groupInstancesByIntegration(
+  integrations: MarketplaceIntegration[],
+  instances: InstanceSummary[],
+): Map<string, InstanceSummary[]> {
+  const bySequence = new Map<string, InstanceSummary[]>();
+  for (const instance of instances) {
+    const key = instance.integration.versionSequenceId;
+    const group = bySequence.get(key);
+    if (group) {
+      group.push(instance);
+    } else {
+      bySequence.set(key, [instance]);
+    }
   }
-  if (integration.deploymentStatus === "PAUSED") {
-    return { label: "Paused", tone: "inactive" };
-  }
-  if (integration.deployedInstances !== "ZERO") {
-    return { label: "Configured", tone: "configured" };
-  }
-  return { label: "Not connected", tone: "inactive" };
+  return new Map(
+    integrations.map((integration) => [
+      integration.id,
+      bySequence.get(integration.versionSequenceId) ?? [],
+    ]),
+  );
+}
+
+export interface InstanceDisplayStatus {
+  label: "Active" | "Paused" | "Unconfigured";
+  tone: "active" | "paused" | "unconfigured";
 }
 
 /**
- * Whether the deployed instance can be moved to a newer marketplace version. An
- * update is offered only when the instance is customer-upgradeable AND a published
+ * Derives one of three visual states for an instance: it's **unconfigured**
+ * until it has been fully configured and deployed at least once, then **active**
+ * or **paused** by its `enabled` flag.
+ */
+export function instanceDisplayStatus(
+  instance: InstanceSummary,
+): InstanceDisplayStatus {
+  if (!instance.lastDeployedAt || instance.configState !== "FULLY_CONFIGURED") {
+    return { label: "Unconfigured", tone: "unconfigured" };
+  }
+  return instance.enabled
+    ? { label: "Active", tone: "active" }
+    : { label: "Paused", tone: "paused" };
+}
+
+/**
+ * Whether an instance can be moved to a newer marketplace version. An update is
+ * offered only when the instance is customer-upgradeable AND a published
  * AVAILABLE version exists with a higher version number than the deployed one.
  * `targetIntegrationId` is the integration id of that newer version — pass it to
  * `updateInstanceVersion`.
  */
-export function updateAvailability(integration: MarketplaceIntegration): {
+export function instanceUpdateAvailability(instance: InstanceSummary): {
   available: boolean;
   targetIntegrationId: string | null;
 } {
-  const deployed = integration.firstDeployedInstance;
-  const latest = deployed?.integration.versionSequence.nodes[0];
+  const latest = instance.integration.versionSequence.nodes[0];
   const available = Boolean(
-    deployed?.isCustomerUpgradeable &&
+    instance.isCustomerUpgradeable &&
       latest &&
-      latest.versionNumber > deployed.integration.versionNumber,
+      latest.versionNumber > instance.integration.versionNumber,
   );
   return {
     available,
     targetIntegrationId: available ? latest!.id : null,
   };
+}
+
+/**
+ * Default name for a new instance: the integration's name for the first one,
+ * then "Name 2", "Name 3", … Pre-fills the "Add Integration" dialog; names can
+ * still collide after deletes, in which case the API's duplicate-name error
+ * surfaces and the customer edits.
+ */
+export function defaultInstanceName(
+  integration: Pick<MarketplaceIntegration, "name">,
+  existingCount: number,
+): string {
+  return existingCount === 0
+    ? integration.name
+    : `${integration.name} ${existingCount + 1}`;
 }
