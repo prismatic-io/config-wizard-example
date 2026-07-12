@@ -58,7 +58,7 @@ a single Prismatic config variable — a JSONFORM named **`Configuration`**. The
                                                       JSONFORM back into CategoryConfig[]
                                                                     │
                                                                     ▼
-                                                    lib/example/steps.ts  (the plugin)
+                                                    components/example/configurationPlugin.tsx
                                                       expandSteps → "General" step +
                                                       one Delivery step per ENABLED category
                                                                     │
@@ -215,12 +215,12 @@ useConfigWizard(instanceId, { plugins: { Configuration: configurationPlugin } })
 
 - **`parseConfiguration()`** (`lib/example/configuration.ts`) walks the holistic JSONFORM schema back
   into a `CategoryConfig[]`.
-- **`configurationPlugin.expandSteps`** (`lib/example/steps.ts`) turns the page holding that var into a
+- **`configurationPlugin.expandSteps`** (`components/example/configurationPlugin.tsx`) turns the page holding that var into a
   **"General"** step (enable categories) plus **one Delivery step per enabled category** (channel + mode
   + minimum level + quiet hours). `validateStep` gates each.
-- The **same key** (`Configuration`) links the step *model* (the plugin) to the step *rendering* (the
-  `customRenderers` map in `components/example/ConfigWizard.tsx`, which draws `CategorySelector` and
-  `DeliveryStep`).
+- Each step the plugin emits carries its **own** `render` and `validate`, drawing `CategorySelector`
+  and `DeliveryStep`; the plugin is registered under the var's key (`Configuration`) in
+  `components/example/ConfigWizard.tsx`.
 
 Every step reads and writes slices of that **one** config-var value, so there is no per-step fetch.
 
@@ -228,8 +228,10 @@ Every step reads and writes slices of that **one** config-var value, so there is
 
 ## End-to-end flow
 
-1. Customer opens a card in the custom marketplace → an instance is resolved/created → the app routes
-   to the wizard at `/integrations/configure/[instanceId]`.
+1. Customer adds a named instance from a marketplace card (or picks an existing one from the card's
+   instance list / the integration's "View All" page) → the app routes to the wizard at
+   `/integrations/configure/[instanceId]`. Integrations that allow multiple marketplace instances
+   can be added any number of times, each with its own name and configuration.
 2. `useConfigWizard` loads the instance and the `Configuration` JSONFORM (the one `buildConfigForm`
    produced on the integration side).
 3. The `Configuration` plugin runs `parseConfiguration` → `CategoryConfig[]`, then `expandSteps` produces

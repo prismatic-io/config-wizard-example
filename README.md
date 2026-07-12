@@ -44,11 +44,25 @@ the signed token. The embedded SDK is only imported in Client Components
 (`hooks/usePrismaticAuth.ts`, `components/*`) — never in the API route or a Server
 Component, since it relies on `window`/`document`.
 
+### Multiple instances per integration
+
+Each card lists the customer's **instances** of that integration (name · date · status), not
+just a connect button. When the integration's marketplace configuration allows multiple
+instances (`allowMultipleMarketplaceInstances`), the card shows an **Add Integration** button
+that prompts for an instance name (pre-filled, e.g. "Acme Notifications 2") before creating;
+otherwise a one-click **Connect** creates the single instance with a default name. The card
+previews up to three instances; **View All →** opens `/integrations/[integrationId]`, where
+every instance can be configured, paused/resumed, moved to a newer version, or deleted.
+
+Instances are matched to their marketplace card by `versionSequenceId` — the identity that is
+stable across an integration's versions — because an instance deployed at v1 carries a
+different `integration.id` than the marketplace's latest version node.
+
 ### Config wizard
 
-Clicking a card resolves the customer's instance for that integration (creating one if
-needed) and routes to `/integrations/configure/[instanceId]`, which renders our own
-`ConfigWizard`. The wizard runs the **same operations Prismatic's built-in wizard uses**:
+Clicking an instance row (or creating a new instance) routes to
+`/integrations/configure/[instanceId]`, which renders our own `ConfigWizard`. The wizard runs
+the **same operations Prismatic's built-in wizard uses**:
 
 ```
 getConfigurationWizardInstance      load the instance + its config pages
@@ -100,22 +114,23 @@ sub-pages — register a `ConfigVarPlugin` under that var's **key**:
 
 ```ts
 interface ConfigVarPlugin {
-  // Expand this var's host page into one or more steps (the "sub-pages").
-  expandSteps: (ctx: ConfigVarPluginContext) => WizardStep[];
-  // Per-step readiness; return `undefined` to defer to the engine default
-  // (every field filled, every CONNECTION ACTIVE).
-  validateStep: (ctx: ConfigVarValidateContext) => boolean | undefined;
+  // Replace ConfigVarInput wherever this var appears inline on a normal page.
+  renderField?: (ctx: { field: WizardField; wizard: ConfigWizardEngine }) => ReactNode;
+  // Expand this var's host page into >=1 steps (the "sub-pages"), each carrying
+  // its OWN `render` (the custom UI) and `validate` (its readiness; return
+  // `undefined` to defer to the engine default: every field filled, every
+  // CONNECTION ACTIVE).
+  expandSteps?: (ctx: ConfigVarPluginContext) => WizardStep[];
 }
 
 useConfigWizard(instanceId, { plugins: { Configuration: configurationPlugin } });
 ```
 
 The engine tags every step a plugin produces with `ownerKey` (the config-var key) and marks
-the page's base step `primary`. The matching **renderer** for those steps is registered on the
-view side, in your wizard component's `customRenderers` map under the same key — so the key is
-the single link between a var's step model (data) and how its steps draw (JSX). The `primary`
-step also renders the page's other, non-plugin vars with the standard field, so they're never
-lost. Anything you don't register stays fully standard.
+the page's base step `primary` — that step also renders the page's other, non-plugin vars with
+the standard field, so they're never lost. Because each step carries its own `render` and
+`validate`, the plugin is the single home for a var's step model *and* how its steps draw.
+Anything you don't register stays fully standard.
 
 ### Server state: React Query
 
@@ -165,19 +180,18 @@ elements through the standard `ConfigVarInput` — copy the `PageElements` helpe
 `components/example/ConfigWizard.tsx` as your starting point and delete the category-specific
 parts. Every config var type renders out of the box.
 
-**Path B — a custom multi-step experience for a specific config var.** Three steps, all keyed
-by that config var's name:
+**Path B — a custom multi-step experience for a specific config var.** Two steps, keyed by
+that config var's name:
 
-1. **Data** — write a `ConfigVarPlugin` (model it on `configurationPlugin` in
-   `lib/example/steps.ts`): `expandSteps` turns the var's page into your sub-pages,
-   `validateStep` gates each. Parse your var's schema however you like (this example's
-   `lib/example/configuration.ts` shows one approach).
+1. **Write a `ConfigVarPlugin`** (model it on `configurationPlugin` in
+   `components/example/configurationPlugin.tsx`): `expandSteps` turns the var's page into your
+   sub-pages, each with its own `render` (the custom UI) and `validate` (its gate). Parse your
+   var's schema however you like (this example's `lib/example/configuration.ts` shows one
+   approach).
 2. **Register it** — `useConfigWizard(instanceId, { plugins: { <YourVarKey>: yourPlugin } })`.
-3. **View** — add a renderer under the **same key** to the `customRenderers` map in your
-   wizard component (this example renders `CategorySelector` / `DeliveryStep`).
 
-The shared key is the only coupling between the two halves. Vars you don't register keep
-rendering standardly, so Path A and Path B mix freely on the same page.
+Vars you don't register keep rendering standardly, so Path A and Path B mix freely on the same
+page.
 
 
 ## Setup
@@ -227,6 +241,7 @@ rendering standardly, so Path A and Path B mix freely on the same page.
 | `app/providers.tsx` | React Query `QueryClientProvider` (caching/retry defaults), mounted in `app/layout.tsx` |
 | `app/page.tsx` | Landing page + live auth status |
 | `app/integrations/page.tsx` | Marketplace route |
+| `app/integrations/[integrationId]/page.tsx` | Per-integration instance list ("View All") route |
 | `app/integrations/configure/[instanceId]/page.tsx` | Config wizard route |
 | `hooks/usePrismaticAuth.ts` | SDK init + token `useQuery`, re-auth-before-expiry |
 | `components/AuthStatus.tsx` | Live auth-state indicator |
@@ -235,9 +250,13 @@ rendering standardly, so Path A and Path B mix freely on the same page.
 
 | Path | Purpose |
 |------|---------|
-| `lib/marketplace.ts` | Marketplace GraphQL query, types, avatar/status helpers |
-| `components/CustomMarketplace.tsx` | Fetches integrations, renders the card grid, refetches on deploy/delete events |
-| `components/IntegrationCard.tsx` | A single card; resolves/creates the instance and routes to the wizard |
+| `lib/marketplace.ts` | Marketplace GraphQL query, types, avatar helper, and the instance grouping / status / naming helpers |
+| `lib/format.ts` | Short-date formatter for instance rows |
+| `components/CustomMarketplace.tsx` | Fetches integrations + the customer's instances, groups them per card, renders the grid |
+| `components/IntegrationCard.tsx` | A single card: instance rows with status, Add Integration / Connect, View All |
+| `components/NewInstanceDialog.tsx` | Name prompt for a new instance; creates it and routes to the wizard |
+| `components/IntegrationDetail.tsx` | The "View All" page: every instance with configure / pause / update / delete |
+| `components/InstanceStatusIcon.tsx` | Per-instance status glyph (active / paused / unconfigured) |
 
 ### Config wizard — generic kit (reusable)
 
@@ -255,6 +274,6 @@ rendering standardly, so Path A and Path B mix freely on the same page.
 | Path | Purpose |
 |------|---------|
 | `lib/example/configuration.ts` | Parses this integration's `Configuration` JSONFORM var into a notification-category schema |
-| `lib/example/steps.ts` | `configurationPlugin` (`expandSteps` + `validateStep`) — the category step model |
-| `components/example/ConfigWizard.tsx` | Registers the `Configuration` plugin + its `customRenderers`, and assembles the rendered wizard |
+| `components/example/configurationPlugin.tsx` | `configurationPlugin` (`expandSteps`, per-step `render`/`validate`) — the category step model |
+| `components/example/ConfigWizard.tsx` | Registers the `Configuration` plugin and assembles the rendered wizard |
 | `components/example/*` | Custom step renderers: `CategorySelector` (category selection), `DeliveryStep` (per-category delivery rules) |

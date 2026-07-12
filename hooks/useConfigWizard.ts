@@ -416,8 +416,22 @@ export function useConfigWizard(
           refetchType: "none",
         });
       }
-      if (isLastStep) setDeployed(true);
-      else setStepIndex(safeIndex + 1);
+      if (isLastStep) {
+        // The marketplace's card counts/statuses read these keys; no window
+        // message fires for our custom wizard, so mark them stale here. They
+        // refetch when /integrations remounts.
+        void queryClient.invalidateQueries({
+          queryKey: prismaticKeys.marketplace(),
+          refetchType: "none",
+        });
+        void queryClient.invalidateQueries({
+          queryKey: prismaticKeys.instances(),
+          refetchType: "none",
+        });
+        setDeployed(true);
+      } else {
+        setStepIndex(safeIndex + 1);
+      }
     },
   });
 

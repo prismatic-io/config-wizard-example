@@ -576,6 +576,61 @@ export const SET_INSTANCE_ENABLED = /* GraphQL */ `
 `;
 
 /**
+ * All of the active customer's instances (the JWT scopes the query — no customer
+ * filter needed), with the fields the marketplace UI needs: name/date/status for
+ * the card rows, `versionSequenceId` for matching each instance to its marketplace
+ * integration (an instance deployed at v1 has a different integration id than the
+ * marketplace's latest version node, but the same versionSequenceId), and the
+ * deployed version + latest AVAILABLE version for per-instance update checks.
+ * No pagination — the default page size is ample for one customer's instances in
+ * this example.
+ */
+export const GET_CUSTOMER_INSTANCES = /* GraphQL */ `
+  query getCustomerInstances {
+    instances(isSystem: false) {
+      nodes {
+        id
+        name
+        enabled
+        createdAt
+        lastDeployedAt
+        configState
+        isCustomerUpgradeable
+        integration {
+          id
+          versionNumber
+          versionSequenceId
+          versionSequence(
+            first: 1
+            marketplaceConfiguration_Istartswith: "AVAILABLE"
+            orderBy: { direction: DESC, field: VERSION_NUMBER }
+          ) {
+            nodes {
+              id
+              versionNumber
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const DELETE_INSTANCE = /* GraphQL */ `
+  mutation deleteInstance($instanceId: ID!) {
+    deleteInstance(input: { id: $instanceId }) {
+      instance {
+        id
+      }
+      errors {
+        field
+        messages
+      }
+    }
+  }
+`;
+
+/**
  * Lightweight poll of every config variable's `status` (and recent logs) for an
  * instance. Used to watch an OAuth connection flip to "ACTIVE" after the user
  * authorizes in a separate tab. Kept verbatim from Prismatic's own query so the
