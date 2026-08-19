@@ -28,9 +28,9 @@ Lint a workspace with `npm run lint --workspace=owner-to-fakecrm-sync`.
 - `src/acmeClient.ts` mirrors the surface a real host-app client would have
   (`resources("owner")` list/update + webhook register/delete) over static data — swap its
   internals for real HTTP calls to de-mock the Acme side.
-- The config pages are rendered by the custom embedded wizard one directory up — config-var
-  keys (`Account`, `Account Search`, `Owner Mapping`) are referenced by name in
-  `../lib/example/` and `../components/example/`. Renaming one means updating both sides.
+- The config pages are rendered by the custom embedded wizard one directory up — the
+  `Owner Mapping` config-var key is referenced by name in `../lib/example/` and
+  `../components/example/`. Renaming it means updating both sides.
 
 ## Prism MCP Server
 

@@ -1,12 +1,10 @@
 import {
   configPage,
-  configVar,
   connectionConfigVar,
   dataSourceConfigVar,
 } from "@prismatic-io/spectral";
 import {
   CRM_CONTACTS,
-  CRM_ACCOUNTS,
   dealOwnerLabel,
   formatUsd,
   getDeals,
@@ -47,57 +45,6 @@ export const configPages = {
       }),
     },
   }),
-  "Select Account": configPage({
-    tagline: "Search for account",
-    elements: {
-      _0: "Search for the FakeCRM account to sync.",
-      "Account Search": configVar({
-        stableKey: "account-search",
-        dataType: "string",
-        description: "Partial account or contact name to search for",
-      }),
-      "Account": dataSourceConfigVar({
-        stableKey: "account",
-        dataSourceType: "picklist",
-        description: "The FakeCRM account whose contacts will be mapped",
-        perform: async (context, params) => {
-          // The search text arrives as a wire input on fetchDataSourceContent
-          // (undeclared inputs pass through to `params`); the saved config var
-          // is the fallback so older frontends keep working.
-          const fromInput = (params as Record<string, unknown> | undefined)?.[
-            "search"
-          ];
-          const q = String(
-            fromInput ?? context.configVars["Account Search"] ?? "",
-          )
-            .trim()
-            .toLowerCase();
-          // No criteria yet — the search UI shows results only after typing.
-          if (!q) {
-            return { result: [] };
-          }
-
-          // Case-insensitive partial match on the account name or any
-          // member's name ("glo" finds Globex Inc either way).
-          const matches = CRM_ACCOUNTS.filter(
-            (a) =>
-              a.name.toLowerCase().includes(q) ||
-              a.memberContactIds.some((id) =>
-                (
-                  CRM_CONTACTS.find((c) => c.id === id)?.name ?? ""
-                )
-                  .toLowerCase()
-                  .includes(q),
-              ),
-          );
-
-          return {
-            result: matches.map((a) => ({ key: a.id, label: a.name })),
-          };
-        },
-      }),
-    },
-  }),
   "Mapping Owner": configPage({
     tagline: "Map FakeCRM contacts to Acme owners",
     elements: {
@@ -111,19 +58,6 @@ export const configPages = {
           const owners = await client
             .resources<AcmeOwnerData>("owner")
             .list();
-
-          // Scope the FakeCRM side to the account selected on the search
-          // page. The wizard guarantees a selection before this page, so the
-          // unscoped fallback only covers instances configured headlessly.
-          const accountId = String(context.configVars["Account"] ?? "");
-          const account = CRM_ACCOUNTS.find(
-            (a) => a.id === accountId,
-          );
-          const crmContacts = account
-            ? CRM_CONTACTS.filter((c) =>
-                account.memberContactIds.includes(c.id),
-              )
-            : CRM_CONTACTS;
 
           if (owners.length === 0) {
             return {
@@ -150,7 +84,7 @@ export const configPages = {
             };
           }
 
-          const contactOneOf = crmContacts.map((c) => ({
+          const contactOneOf = CRM_CONTACTS.map((c) => ({
             const: c.id,
             title: c.name,
           }));
@@ -244,7 +178,7 @@ export const configPages = {
           // the mapping arrives mostly filled in (like a real integration).
           const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
           const data = {
-            mappings: crmContacts.map((c) => {
+            mappings: CRM_CONTACTS.map((c) => {
               const match = owners.find(
                 (o) => norm(String(o.data.name ?? "")) === norm(c.name),
               );

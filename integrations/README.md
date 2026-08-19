@@ -19,15 +19,14 @@ npm workspaces; install once from this directory.
 
 `owner-to-fakecrm-sync` (integration name **FakeCRM**) has:
 
-- **Flows** (`src/flows.ts`) — on instance deploy it registers an Acme webhook filtered to
-  the configured account and full-syncs the mapped owners; the webhook-triggered flow syncs
+- **Flows** (`src/flows.ts`) — on instance deploy it registers an Acme webhook and
+  full-syncs the mapped owners; the webhook-triggered flow syncs
   owner changes to FakeCRM (writing `crm_id` / `sync_status` back); on instance delete it
   removes the webhook.
 - **Config pages** (`src/configPages.ts`) — the wizard pages the embedded app renders:
-  **Connect FakeCRM** (customer's FakeCRM API key), **Select Account** (account search
-  datasource), **Mapping Owner** (a JSONFORM mapping every FakeCRM contact to an Acme owner),
-  and the deal linking/confirmation pages.
-- **Mock data on both sides** — `src/mockData.ts` (FakeCRM contacts, accounts, deals)
+  **Connect FakeCRM** (customer's FakeCRM API key), **Mapping Owner** (a JSONFORM mapping
+  every FakeCRM contact to an Acme owner), and the deal linking/confirmation pages.
+- **Mock data on both sides** — `src/mockData.ts` (FakeCRM contacts, deals)
   and `src/acmeClient.ts` (a mock Acme client: static owners, log-only writes, fake
   webhook registration). No external services, no credentials, no org-level connection to
   provision — the integration runs anywhere as-is.

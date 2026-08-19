@@ -12,17 +12,11 @@
 export interface CrmContact {
   id: string;
   name: string;
-  /** Identity fields backing the account search. Team entries have no
-   * first/last name — search falls back to matching `name`. */
+  /** Identity fields as a real CRM would return them. Team entries have
+   * no first/last name. */
   firstName?: string;
   lastName?: string;
   email?: string;
-}
-
-export interface CrmAccount {
-  id: string;
-  name: string;
-  memberContactIds: string[];
 }
 
 export interface CrmDealOwner {
@@ -68,66 +62,13 @@ export const CRM_CONTACTS: CrmContact[] = [
     name: "Globex Support Team",
     email: "support@globex.example.com",
   },
-  // Members of the non-Globex accounts below. They carry no deals —
-  // CRM_DEALS is Globex-account demo data — they exist so the account
-  // type-ahead has more than one result to offer.
-  {
-    id: "CRM-2001",
-    name: "Priya Sharma",
-    firstName: "Priya",
-    lastName: "Sharma",
-    email: "priya.sharma@initech.example.com",
-  },
-  {
-    id: "CRM-2002",
-    name: "Marco Ruiz",
-    firstName: "Marco",
-    lastName: "Ruiz",
-    email: "marco.ruiz@initech.example.com",
-  },
-  {
-    id: "CRM-3001",
-    name: "Tunde Adebayo",
-    firstName: "Tunde",
-    lastName: "Adebayo",
-    email: "tunde.adebayo@hooli.example.com",
-  },
-  {
-    id: "CRM-3002",
-    name: "Hooli Procurement Team",
-    email: "procurement@hooli.example.com",
-  },
-];
-
-/**
- * Accounts group the contacts a rep manages as one book-of-business entry.
- * The wizard's search page matches on account name or any member's name; the
- * selected account scopes the Owner Mapping step. The Globex account's id
- * intentionally equals CRM_ACCOUNT_TEAM.id so team-owned deal ownership
- * keeps resolving through the same identifier.
- */
-export const CRM_ACCOUNTS: CrmAccount[] = [
-  {
-    id: "CRM-AC-1",
-    name: "Globex Inc",
-    memberContactIds: ["CRM-1001", "CRM-1002", "CRM-1003", "CRM-1004", "CRM-1005"],
-  },
-  {
-    id: "CRM-AC-2",
-    name: "Initech",
-    memberContactIds: ["CRM-2001", "CRM-2002"],
-  },
-  {
-    id: "CRM-AC-3",
-    name: "Hooli",
-    memberContactIds: ["CRM-3001", "CRM-3002"],
-  },
 ];
 
 /**
  * Account-level shared owner sentinel. FakeCRM attributes team-owned deals
- * to one account id; for mapping purposes the account "belongs to" the
- * shared account-team contact entry (CRM-1002).
+ * to one account id (the demo's contacts all belong to the Globex account,
+ * CRM-AC-1); for mapping purposes the account "belongs to" the shared
+ * account-team contact entry (CRM-1002).
  */
 export const CRM_ACCOUNT_TEAM = {
   id: "CRM-AC-1",

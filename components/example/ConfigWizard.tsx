@@ -8,12 +8,6 @@ import {
   type ConfigWizardEngine,
 } from "@/hooks/useConfigWizard";
 import { OWNER_MAPPING_KEY, ownerMappingPlugin } from "@/components/example/ownerMappingPlugin";
-import {
-  ACCOUNT_KEY,
-  ACCOUNT_SEARCH_KEY,
-  accountSearchFieldPlugin,
-  accountSearchPlugin,
-} from "@/components/example/accountSearchPlugin";
 import { ConfigVarInput } from "@/components/wizard/fields/ConfigVarInput";
 import { Shell } from "@/components/wizard/chrome/Shell";
 import { Loading } from "@/components/wizard/chrome/Loading";
@@ -30,8 +24,6 @@ interface ConfigWizardProps {
  */
 const plugins: Record<string, ConfigVarPlugin> = {
   [OWNER_MAPPING_KEY]: ownerMappingPlugin,
-  [ACCOUNT_KEY]: accountSearchPlugin,
-  [ACCOUNT_SEARCH_KEY]: accountSearchFieldPlugin,
 };
 
 /**

@@ -26,10 +26,10 @@ Next.js 16 (App Router), React 19, TypeScript, and Tailwind CSS.
    the marketplace). **Link Account** names a new instance and drops into the wizard; an
    existing instance row re-enters it.
 
-3. **The wizard** walks five pages defined by the integration: **Connect FakeCRM** (API-key
-   connection), **Select Account** (debounced account type-ahead), **Mapping Owner** (a
-   table gating Next until every FakeCRM contact is mapped), **Link Deals** (checklist
-   scoped to mapped owners), and a read-only confirmation where **Create** deploys.
+3. **The wizard** walks four pages defined by the integration: **Connect FakeCRM** (API-key
+   connection), **Mapping Owner** (a table gating Next until every FakeCRM contact is
+   mapped), **Link Deals** (checklist scoped to mapped owners), and a read-only
+   confirmation where **Create** deploys.
 
 The backing integration lives in [`integrations/`](./integrations) — one code-native
 integration (`owner-to-fakecrm-sync`). **Both sides are mocked** (`mockData.ts` for FakeCRM,
@@ -86,16 +86,15 @@ useConfigWizard(instanceId, { plugins: { "Owner Mapping": ownerMappingPlugin } }
 Both hooks run only while the var's host page is the current page — `field.value` is the live
 draft (seeded from the saved instance value on re-entry) and `field.content` is the var's
 computed page content. Unregistered vars stay fully standard, so custom and standard vars mix
-freely on the same page. This example registers three plugins to model yours on:
+freely on the same page. This example registers one plugin to model yours on:
 
-- **`accountSearchPlugin`** (on `Account`) draws the type-ahead search, persisting search
-  text with `wizard.saveVars`, re-running the datasource with `wizard.invokeDataSource`, and
-  clearing later pages with `wizard.resetDownstream` when the selection changes.
-- **`accountSearchFieldPlugin`** (on `Account Search`) renders `null` — the search UI *is*
-  that var's input, so this suppresses the duplicate text box.
 - **`ownerMappingPlugin`** (on `Owner Mapping`) parses the var's JSONFORM schema into a
   mapping table and `validate`s that every FakeCRM contact is mapped — stricter than the
   default non-empty gate.
+
+For richer per-var UX the engine also exposes `wizard.saveVars` (persist values mid-page),
+`wizard.invokeDataSource` (re-run a datasource with extra inputs), and
+`wizard.resetDownstream` (clear later pages when an upstream selection changes).
 
 ### Already have a marketplace?
 
@@ -225,7 +224,6 @@ To point the app at your own Prismatic org:
 | `hooks/useConfigWizard.ts` | The wizard engine — owns all Prismatic state |
 | `hooks/useConnectionStatus.ts` | Polls OAuth connection status until `ACTIVE` |
 | `hooks/useJsonDraft.ts` | JSON-string draft editing primitive |
-| `hooks/useDebouncedValue.ts` | Debounce primitive (drives the account type-ahead) |
 | `components/wizard/chrome/*` | Presentational frame: `Shell`, `Loading`, `ErrorBox` |
 | `components/wizard/fields/*` | Generic field renderers: `ConfigVarInput`, `FieldControl`, `JsonFormRenderer`, `MultiSelect`, `ComboBox`, `UiTable` |
 
@@ -233,10 +231,7 @@ To point the app at your own Prismatic org:
 
 | Path | Purpose |
 |------|---------|
-| `lib/example/account.ts` | The `Account` / `Account Search` config-var keys |
 | `lib/example/ownerMapping.ts` | Parses the `Owner Mapping` JSONFORM schema into a mapping model + completeness check |
 | `components/example/ConfigWizard.tsx` | Plugin registry + the assembled wizard UI |
-| `components/example/accountSearchPlugin.tsx` | Type-ahead plugin pair for `Account` / `Account Search` |
-| `components/example/AccountSearchStep.tsx` | The debounced search UI (saveVars / invokeDataSource / resetDownstream) |
 | `components/example/ownerMappingPlugin.tsx` | Owner-mapping plugin: table render + all-mapped gate |
 | `components/example/OwnerMappingStep.tsx` | The mapping table UI |
