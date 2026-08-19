@@ -8,12 +8,14 @@
 import {
   jsonFormSchema,
   parseSchemaFields,
+  parseUiTable,
   validateFormValue,
   type FieldDescriptor,
   type WizardSchema,
 } from "@/lib/prismatic";
 import { useJsonDraft } from "@/hooks/useJsonDraft";
 import { FieldControl } from "@/components/wizard/fields/FieldControl";
+import { UiTableRenderer } from "@/components/wizard/fields/UiTable";
 
 interface JsonFormRendererProps {
   /** The baked JSONForm page-content entry (`{schema, uiSchema, data}` or a JSON string). */
@@ -32,6 +34,13 @@ type Data = Record<string, unknown>;
  */
 export function JsonFormRenderer({ content, value, onChange }: JsonFormRendererProps) {
   const schema = jsonFormSchema(content);
+
+  // A uiSchema that declares a row-wise table renders as one (checkbox + label columns).
+  const table = schema ? parseUiTable(content) : null;
+  if (schema && table) {
+    return <UiTableRenderer table={table} schema={schema} value={value} onChange={onChange} />;
+  }
+
   const fields = parseSchemaFields(schema);
 
   if (fields === null || !schema) {
@@ -41,7 +50,7 @@ export function JsonFormRenderer({ content, value, onChange }: JsonFormRendererP
         onChange={(e) => onChange(e.target.value)}
         rows={8}
         spellCheck={false}
-        className="rounded-md border border-white/15 bg-white/[0.04] px-3 py-2 font-mono text-xs text-white/90 focus:border-primary focus:outline-none"
+        className="rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-xs text-neutral-900 focus:border-primary focus:outline-none"
       />
     );
   }
@@ -77,9 +86,9 @@ function JsonFormFields({
           return (
             <div
               key={field.key}
-              className="flex flex-col gap-3 rounded-lg border border-white/10 px-4 py-3"
+              className="flex flex-col gap-3 rounded-lg border border-neutral-200 px-4 py-3"
             >
-              <span className="text-sm font-medium text-white/90">{field.label}</span>
+              <span className="text-sm font-medium text-neutral-900">{field.label}</span>
               {(field.fields ?? []).map((child) => (
                 <FieldControl
                   key={child.key}
@@ -102,7 +111,7 @@ function JsonFormFields({
       })}
 
       {errors.length > 0 && (
-        <ul className="flex flex-col gap-1 text-xs text-red-400">
+        <ul className="flex flex-col gap-1 text-xs text-red-600">
           {errors.map((err, i) => (
             <li key={i}>{err}</li>
           ))}

@@ -38,14 +38,14 @@ export function AuthStatus() {
   const copy = COPY[status];
 
   return (
-    <div className="rounded-lg border border-black/10 p-4 text-sm dark:border-white/15">
+    <div className="rounded-lg border border-black/10 p-4 text-sm">
       <div className="flex items-center gap-2 font-medium">
         <span className={`inline-block h-2.5 w-2.5 rounded-full ${copy.dot}`} />
         {copy.label}
       </div>
-      <p className="mt-1 text-black/60 dark:text-white/60">{copy.detail}</p>
+      <p className="mt-1 text-black/60">{copy.detail}</p>
       {error && (
-        <pre className="mt-2 overflow-x-auto rounded bg-black/5 p-2 text-xs dark:bg-white/10">
+        <pre className="mt-2 overflow-x-auto rounded bg-black/5 p-2 text-xs">
           {error.message}
         </pre>
       )}

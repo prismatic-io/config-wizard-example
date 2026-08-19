@@ -140,3 +140,5 @@ vite.config.ts.timestamp-*
 
 # Prism files
 prism.json
+.spectral/
+.DS_Store

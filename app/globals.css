@@ -1,18 +1,19 @@
 @import "tailwindcss";
 
 /*
- * Fixed dark theme — committed to the UX design's palette regardless of the OS
- * appearance setting (no prefers-color-scheme switch). The wizard renders as a
- * dark modal: near-black header, dark-grey body, blue primary accent.
+ * Fixed light theme — the demo keeps one look regardless of the OS
+ * appearance setting (no prefers-color-scheme switch): white page, hairline
+ * neutral borders, ink-black actions, and a serif display face (Newsreader)
+ * for integration names and the wordmark.
  */
 :root {
-  --background: #0f0f0f; /* app backdrop */
-  --foreground: #ededed; /* primary text */
-  --surface: #232323; /* modal body */
-  --surface-header: #181818; /* modal header bar */
-  --primary: #2563eb; /* accent blue */
-  --primary-hover: #1d4ed8;
-  color-scheme: dark;
+  --background: #ffffff; /* app backdrop */
+  --foreground: #17171a; /* primary text (ink) */
+  --surface: #ffffff; /* modal + card body */
+  --surface-header: #fafafa; /* modal header bar, dropdown panels */
+  --primary: #4f46e5; /* indigo actions (buttons, checkboxes) — the demo's product accent */
+  --primary-hover: #4338ca;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -23,6 +24,7 @@
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-newsreader);
   --font-mono: var(--font-geist-mono);
 }
 

@@ -58,7 +58,7 @@ export function CustomMarketplace() {
 
   if (!authenticated) {
     return (
-      <p className="text-sm text-black/60 dark:text-white/60">
+      <p className="text-sm text-black/60">
         Waiting for authentication… (status: {status})
       </p>
     );
@@ -66,7 +66,7 @@ export function CustomMarketplace() {
 
   if (integrationsQuery.isLoading || instancesQuery.isLoading) {
     return (
-      <p className="text-sm text-black/60 dark:text-white/60">
+      <p className="text-sm text-black/60">
         Loading integrations…
       </p>
     );
@@ -75,7 +75,7 @@ export function CustomMarketplace() {
   const error = integrationsQuery.error ?? instancesQuery.error;
   if (error) {
     return (
-      <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+      <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
         Failed to load integrations:{" "}
         {error instanceof Error ? error.message : String(error)}
       </div>
@@ -85,7 +85,7 @@ export function CustomMarketplace() {
   const integrations = integrationsQuery.data ?? [];
   if (integrations.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-black/20 p-8 text-center text-sm text-black/60 dark:border-white/20 dark:text-white/60">
+      <div className="rounded-lg border border-dashed border-black/20 p-8 text-center text-sm text-black/60">
         No marketplace integrations are available to this customer yet. Publish an
         integration and mark it available in the marketplace to see it here.
       </div>

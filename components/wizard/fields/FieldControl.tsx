@@ -23,7 +23,7 @@ export function FieldControl({
 }) {
   if (field.kind === "boolean") {
     return (
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
         <input
           type="checkbox"
           checked={value === true}
@@ -32,7 +32,7 @@ export function FieldControl({
         />
         <span>
           {field.label}
-          {field.required && <span className="text-red-400"> *</span>}
+          {field.required && <span className="text-red-600"> *</span>}
         </span>
       </label>
     );
@@ -40,9 +40,9 @@ export function FieldControl({
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs text-white/60">
+      <label className="text-xs text-neutral-500">
         {field.label}
-        {field.required && <span className="text-red-400"> *</span>}
+        {field.required && <span className="text-red-600"> *</span>}
       </label>
       {field.kind === "array" ? (
         <MultiSelect
@@ -57,7 +57,7 @@ export function FieldControl({
           <select
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full appearance-none rounded-md border border-white/15 bg-white/[0.04] py-2 pl-3 pr-9 text-sm text-white/90 focus:border-primary focus:outline-none"
+            className="w-full appearance-none rounded-md border border-neutral-300 bg-white py-2 pl-3 pr-9 text-sm text-neutral-900 focus:border-primary focus:outline-none"
           >
             <option value="">Select</option>
             {field.options.map((opt) => (
@@ -68,7 +68,7 @@ export function FieldControl({
           </select>
           <ChevronDown
             size={16}
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40"
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400"
           />
         </div>
       ) : (
@@ -76,7 +76,7 @@ export function FieldControl({
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-md border border-white/15 bg-white/[0.04] px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-primary focus:outline-none"
+          className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary focus:outline-none"
         />
       )}
     </div>

@@ -14,7 +14,7 @@ export function InstanceStatusIcon({
       <CircleCheck
         size={size}
         aria-label={status.label}
-        className="shrink-0 text-green-600 dark:text-green-400"
+        className="shrink-0 text-green-600"
       />
     );
   }
@@ -23,7 +23,7 @@ export function InstanceStatusIcon({
       <CirclePause
         size={size}
         aria-label={status.label}
-        className="shrink-0 text-black/40 dark:text-white/40"
+        className="shrink-0 text-black/40"
       />
     );
   }
@@ -31,7 +31,7 @@ export function InstanceStatusIcon({
     <CircleDashed
       size={size}
       aria-label={status.label}
-      className="shrink-0 text-amber-600 dark:text-amber-400"
+      className="shrink-0 text-amber-600"
     />
   );
 }

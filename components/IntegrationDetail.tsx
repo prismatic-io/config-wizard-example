@@ -51,7 +51,7 @@ export function IntegrationDetail({ integrationId }: { integrationId: string }) 
 
   if (!authenticated) {
     return (
-      <p className="text-sm text-black/60 dark:text-white/60">
+      <p className="text-sm text-black/60">
         Waiting for authentication… (status: {status})
       </p>
     );
@@ -59,14 +59,14 @@ export function IntegrationDetail({ integrationId }: { integrationId: string }) 
 
   if (integrationsQuery.isLoading || instancesQuery.isLoading) {
     return (
-      <p className="text-sm text-black/60 dark:text-white/60">Loading…</p>
+      <p className="text-sm text-black/60">Loading…</p>
     );
   }
 
   const error = integrationsQuery.error ?? instancesQuery.error;
   if (error) {
     return (
-      <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+      <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
         Failed to load: {error instanceof Error ? error.message : String(error)}
       </div>
     );
@@ -77,7 +77,7 @@ export function IntegrationDetail({ integrationId }: { integrationId: string }) 
   if (!integration) {
     return (
       <div className="flex flex-col gap-3">
-        <p className="text-sm text-black/60 dark:text-white/60">
+        <p className="text-sm text-black/60">
           This integration isn&rsquo;t available in the marketplace.
         </p>
         <BackLink />
@@ -98,7 +98,7 @@ export function IntegrationDetail({ integrationId }: { integrationId: string }) 
         {integration.allowMultipleMarketplaceInstances && (
           <button
             onClick={() => setAdding(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium hover:bg-black/5"
           >
             Add Integration
             <Plus size={14} />
@@ -107,11 +107,11 @@ export function IntegrationDetail({ integrationId }: { integrationId: string }) 
       </Header>
 
       {instances.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-black/20 p-8 text-center text-sm text-black/60 dark:border-white/20 dark:text-white/60">
+        <div className="rounded-lg border border-dashed border-black/20 p-8 text-center text-sm text-black/60">
           No instances created yet.
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-black/10 rounded-lg border border-black/10 dark:divide-white/15 dark:border-white/15">
+        <div className="flex flex-col divide-y divide-black/10 rounded-lg border border-black/10">
           {instances.map((instance) => (
             <InstanceRow key={instance.id} instance={instance} />
           ))}
@@ -133,7 +133,7 @@ function BackLink() {
   return (
     <Link
       href="/integrations"
-      className="flex w-fit items-center gap-1 text-sm text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
+      className="flex w-fit items-center gap-1 text-sm text-black/60 hover:text-black"
     >
       <ArrowLeft size={14} />
       All integrations
@@ -170,7 +170,7 @@ function Header({
       <div className="min-w-0 flex-1">
         <h1 className="text-2xl font-semibold">{integration.name}</h1>
         {integration.description && (
-          <p className="mt-1 max-w-2xl text-sm text-black/60 dark:text-white/60">
+          <p className="mt-1 max-w-2xl text-sm text-black/60">
             {integration.description}
           </p>
         )}
@@ -236,7 +236,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
             <InstanceStatusIcon status={status} />
             <span className="truncate font-medium">{instance.name}</span>
           </div>
-          <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">
+          <p className="mt-0.5 text-xs text-black/50">
             Created {formatShortDate(instance.createdAt)} ·{" "}
             {instance.lastDeployedAt
               ? `Deployed ${formatShortDate(instance.lastDeployedAt)}`
@@ -247,7 +247,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
 
         {confirmingDelete ? (
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-black/60 dark:text-white/60">
+            <span className="text-black/60">
               Delete this instance?
             </span>
             <button
@@ -260,7 +260,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
             <button
               onClick={() => setConfirmingDelete(false)}
               disabled={busy}
-              className="rounded-md px-3 py-1.5 text-black/60 hover:text-black disabled:opacity-50 dark:text-white/60 dark:hover:text-white"
+              className="rounded-md px-3 py-1.5 text-black/60 hover:text-black disabled:opacity-50"
             >
               Cancel
             </button>
@@ -280,7 +280,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
             )}
             <Link
               href={`/integrations/configure/${encodeURIComponent(instance.id)}`}
-              className="rounded-md border border-black/15 px-3 py-1.5 font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              className="rounded-md border border-black/15 px-3 py-1.5 font-medium hover:bg-black/5"
             >
               Configure
             </Link>
@@ -288,7 +288,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
               <button
                 onClick={() => toggleMutation.mutate()}
                 disabled={busy}
-                className="rounded-md border border-black/15 px-3 py-1.5 font-medium hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+                className="rounded-md border border-black/15 px-3 py-1.5 font-medium hover:bg-black/5 disabled:opacity-50"
               >
                 {toggleMutation.isPending
                   ? "Saving…"
@@ -300,7 +300,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
             <button
               onClick={() => setConfirmingDelete(true)}
               disabled={busy}
-              className="rounded-md px-3 py-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30"
+              className="rounded-md px-3 py-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50"
             >
               Delete
             </button>
@@ -309,7 +309,7 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
       </div>
 
       {mutationError && (
-        <p className="text-xs text-red-700 dark:text-red-400">
+        <p className="text-xs text-red-700">
           {mutationError instanceof Error
             ? mutationError.message
             : String(mutationError)}
