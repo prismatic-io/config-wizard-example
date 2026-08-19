@@ -121,16 +121,16 @@ export function MultiSelect({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 rounded-md border border-white/15 bg-white/[0.04] px-3 py-2 text-left text-sm text-white/90 focus:border-primary focus:outline-none"
+        className="flex w-full items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 text-left text-sm text-neutral-900 focus:border-primary focus:outline-none"
       >
         {icon}
-        <span className="flex-1 truncate text-white/60">{placeholder}</span>
+        <span className="flex-1 truncate text-neutral-500">{placeholder}</span>
         {value.length > 0 && (
           <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-white">
             {value.length}
           </span>
         )}
-        <ChevronDown size={16} className="shrink-0 text-white/40" />
+        <ChevronDown size={16} className="shrink-0 text-neutral-400" />
       </button>
 
       {open &&
@@ -140,10 +140,10 @@ export function MultiSelect({
           <div
             ref={panelRef}
             style={{ position: "fixed", top: rect.top, left: rect.left, width: rect.width }}
-            className="z-50 overflow-hidden rounded-md border border-white/15 bg-surface-header shadow-2xl"
+            className="z-50 overflow-hidden rounded-md border border-neutral-300 bg-surface-header shadow-2xl"
           >
-            <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-              <Search size={14} className="shrink-0 text-white/40" />
+            <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2">
+              <Search size={14} className="shrink-0 text-neutral-400" />
               <input
                 autoFocus
                 value={query}
@@ -155,12 +155,12 @@ export function MultiSelect({
                   }
                 }}
                 placeholder="Search"
-                className="w-full bg-transparent text-sm text-white/90 placeholder:text-white/40 focus:outline-none"
+                className="w-full bg-transparent text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none"
               />
               <button
                 type="button"
                 onClick={toggleAll}
-                className="shrink-0 text-xs font-medium text-white/60 hover:text-white"
+                className="shrink-0 text-xs font-medium text-neutral-500 hover:text-neutral-900"
               >
                 All
               </button>
@@ -171,18 +171,18 @@ export function MultiSelect({
                   <button
                     type="button"
                     onClick={addCustom}
-                    className="w-full px-3 py-1.5 text-left text-sm text-primary hover:bg-white/5"
+                    className="w-full px-3 py-1.5 text-left text-sm text-primary hover:bg-neutral-100"
                   >
                     Add &ldquo;{query.trim()}&rdquo;
                   </button>
                 </li>
               )}
               {filtered.length === 0 && !canAdd && (
-                <li className="px-3 py-2 text-sm text-white/40">No options</li>
+                <li className="px-3 py-2 text-sm text-neutral-400">No options</li>
               )}
               {filtered.map((opt) => (
                 <li key={opt.key}>
-                  <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-white/80 hover:bg-white/5">
+                  <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
                     <input
                       type="checkbox"
                       checked={selected.has(opt.key)}

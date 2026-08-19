@@ -1,0 +1,30 @@
+{
+  "name": "owner-to-fakecrm-sync",
+  "version": "0.0.1",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "build": "webpack",
+    "import": "npm run build && prism integrations:import",
+    "lint": "eslint --ext .ts ."
+  },
+  "eslintConfig": {
+    "root": true,
+    "extends": [
+      "@prismatic-io/eslint-config-spectral"
+    ]
+  },
+  "dependencies": {
+    "@prismatic-io/spectral": "10.15.0"
+  },
+  "devDependencies": {
+    "@prismatic-io/eslint-config-spectral": "2.1.0",
+    "copy-webpack-plugin": "13.0.0",
+    "dotenv-webpack": "^8.1.1",
+    "eslint": "^8.57.1",
+    "ts-loader": "9.5.2",
+    "typescript": "5.8.3",
+    "webpack": "5.102.1",
+    "webpack-cli": "6.0.1"
+  }
+}

@@ -479,12 +479,34 @@ export const FETCH_PAGE_CONTENT = /* GraphQL */ `
                   id
                   name
                   value
+                  hasValue
                   type
                 }
               }
             }
           }
         }
+      }
+      errors {
+        field
+        messages
+      }
+    }
+  }
+`;
+
+// Runs a single datasource in the context of an instance and returns its
+// content. Like fetchConfigWizardPageContent, it reads data but lives on
+// RootMutation. The datasource only sees the instance's SAVED config vars —
+// `inputs` maps to a low-code datasource's declared inputs and is ignored by
+// code-native datasources, so callers persist dependencies first.
+export const FETCH_DATASOURCE_CONTENT = /* GraphQL */ `
+  mutation fetchDataSourceContent($instanceId: ID!, $dataSourceId: ID!, $inputs: [InputExpression]) {
+    fetchDataSourceContent(
+      input: { id: $instanceId, dataSource: $dataSourceId, inputs: $inputs }
+    ) {
+      fetchDataSourceContentResult {
+        content
       }
       errors {
         field

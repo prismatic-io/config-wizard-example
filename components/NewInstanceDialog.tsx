@@ -64,11 +64,11 @@ export function NewInstanceDialog({
         role="dialog"
         aria-modal="true"
         aria-label={`Add ${integration.name} integration`}
-        className="w-full max-w-sm rounded-xl border border-black/10 bg-background p-5 shadow-2xl dark:border-white/15"
+        className="w-full max-w-sm rounded-xl border border-black/10 bg-background p-5 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <h2 className="font-semibold">Add {integration.name}</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+        <p className="mt-1 text-sm text-black/60">
           Name this integration so you can tell your instances apart.
         </p>
 
@@ -85,11 +85,11 @@ export function NewInstanceDialog({
             onChange={(event) => setName(event.target.value)}
             disabled={busy}
             aria-label="Instance name"
-            className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 disabled:opacity-50 dark:border-white/20 dark:focus:border-white/50"
+            className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 disabled:opacity-50"
           />
 
           {createMutation.error && (
-            <p className="text-xs text-red-700 dark:text-red-400">
+            <p className="text-xs text-red-700">
               {createMutation.error instanceof Error
                 ? createMutation.error.message
                 : String(createMutation.error)}
@@ -101,7 +101,7 @@ export function NewInstanceDialog({
               type="button"
               onClick={onClose}
               disabled={busy}
-              className="rounded-md px-3 py-2 text-sm text-black/60 hover:text-black disabled:opacity-50 dark:text-white/60 dark:hover:text-white"
+              className="rounded-md px-3 py-2 text-sm text-black/60 hover:text-black disabled:opacity-50"
             >
               Cancel
             </button>

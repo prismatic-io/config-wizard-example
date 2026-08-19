@@ -11,12 +11,18 @@ import {
   disconnectConnection,
   fetchConfigWizardPageContent,
   fetchConfigurationWizardInstance,
+  fetchDataSourceContent,
+  isKeyBasedConnection,
+  joinConnectionInputs,
   jsonFormData,
   parseConfigPages,
+  parseConnectionDraft,
+  parsePicklistContent,
   prismaticKeys,
   submitConfigPage,
   type ConfigPage,
   type ConfigWizardData,
+  type ConnectionInputDescriptor,
   type DataType,
   type PageConfigVariable,
   type PageContent,
@@ -37,9 +43,9 @@ import {
  * retry/backoff are the library's, not ours — what's left here is just wizard logic.
  * Local UI state (the draft edits and the step index) stays in plain React state.
  *
- * It is integration-agnostic: it knows nothing about "brands". How config pages expand
- * into steps and how specific vars render are supplied by the caller via `plugins` — a
- * registry of per-config-var renderers/expanders (see components/example/configurationPlugin.tsx).
+ * It is integration-agnostic: the wizard is simply the instance's config pages, one step
+ * per page. How specific vars render and validate is supplied by the caller via `plugins` —
+ * a registry of per-config-var overrides (see components/example/ownerMappingPlugin.tsx).
  */
 
 /** One renderable config variable, pre-wired so a renderer stays plumbing-free. */
@@ -62,110 +68,43 @@ export interface WizardField {
   authorizeUrl: string | null;
   /** Disconnect this connection (engine handles cache-bust + reload). */
   onDisconnect: () => void;
+  /** CONNECTION vars only: OAuth-vs-key-based flavor + the customer-editable inputs. */
+  connection?: {
+    isOAuth2: boolean;
+    /** Joined input descriptors for a key-based connection ([] for OAuth2). */
+    inputs: ConnectionInputDescriptor[];
+  };
 }
 
-/**
- * A step the wizard renders. A "page" step renders its config page's elements with the
- * standard per-dataType renderer. A "custom" step is contributed by a config-var plugin
- * (see `ConfigVarPlugin`): it carries its OWN `render` (and optional `validate`), closing over
- * whatever data it needs — the engine never invokes `render` (the view does) and treats it as an
- * opaque ref. `ownerKey` is the config var whose plugin produced it; `primary` marks the page's
- * base step (which also hosts the page's non-plugin vars).
- */
-export type WizardStep =
-  | { kind: "page"; id: string; label: string; pageName: string; hideIndex?: boolean }
-  | {
-      kind: "custom";
-      id: string;
-      label: string;
-      pageName: string;
-      hideIndex?: boolean;
-      /** The config-var key whose plugin owns this step (injected by the engine). */
-      ownerKey?: string;
-      /** The page's base step — also renders the page's standard (non-plugin) vars. */
-      primary?: boolean;
-      /** This step's UI (supplied by the plugin). Held opaquely by the engine; called by the view. */
-      render: StepRender;
-      /** Readiness for this step. Return `undefined` to defer to the engine default. */
-      validate?: StepValidate;
-    };
-
-/** Render context for a custom step (and for a plugin's inline `renderField`). */
-export interface StepRenderContext {
-  wizard: ConfigWizardEngine;
-  step: WizardStep;
-  /** The owning config var's pre-wired field (value/onChange/…), or undefined off-page. */
-  field: WizardField | undefined;
-}
-/** Readiness context for a custom step — reads drafts/statuses, never engine internals. */
-export interface StepValidateContext {
-  /** The owning config-var key. */
-  key: string;
-  step: WizardStep;
-  draft: (key: string) => string | undefined;
-  statusOf: (key: string) => string | null;
-}
-export type StepRender = (ctx: StepRenderContext) => ReactNode;
-export type StepValidate = (ctx: StepValidateContext) => boolean | undefined;
 /** A plugin's inline renderer for its config var (replaces ConfigVarInput where the var appears). */
 export type ConfigVarRender = (ctx: {
   field: WizardField;
   wizard: ConfigWizardEngine;
 }) => ReactNode;
 
-/**
- * A config var's baked page content, captured (once) the first time its host page loads.
- * Holds the static JSONFORM schema snapshot; the var's VALUE is always read live via `draft`.
- */
-export interface CapturedConfigVar {
-  key: string;
-  pageName: string;
-  /** The var's baked page content (its JSONFORM `{schema,data}`). */
-  content: unknown;
-  /** The var's saved instance value at capture time, if any (the manage/edit seed). */
-  value?: string | null;
+/** Readiness context for a plugin's `validate` — the var's pre-wired field (live value/content). */
+export interface ConfigVarValidateContext {
+  field: WizardField;
 }
-
-/** Inputs a plugin gets to expand its host page into steps. Pure — no engine internals. */
-export interface ConfigVarPluginContext {
-  /** The plugin's own config-var key. */
-  key: string;
-  /** The host config page (the page whose elements reference `key`). */
-  page: ConfigPage;
-  /** This var's captured content, or null until its page has loaded. */
-  captured: CapturedConfigVar | null;
-  /** Read any config var's current draft (e.g. this var's selections). */
-  draft: (key: string) => string | undefined;
-}
+export type ConfigVarValidate = (ctx: ConfigVarValidateContext) => boolean | undefined;
 
 /**
  * A self-contained plugin targeted at ONE config var by key. The engine renders every page with
- * standard per-dataType fields by default; a plugin lets a specific var (e.g. the holistic
- * "Configuration" var) override its rendering and/or expand its page into multiple sub-steps. Both
- * capabilities are independent and optional:
+ * standard per-dataType fields by default and gates "Next" on every var being non-empty (or a
+ * connection being satisfied); a plugin overrides either half for its var. Both hooks run only
+ * while the var's host page is the CURRENT page with content loaded:
  *
- * - `renderField` replaces `ConfigVarInput` wherever the var appears inline on a normal page.
- * - `expandSteps` turns the var's host page into >=1 sub-steps, each carrying its OWN `render` and
- *   `validate`. The view draws `step.render(...)`; the engine gates "Next" on `step.validate(...)`.
- *
- * A plugin may define either, both, or (degenerately) neither.
+ * - `renderField` replaces `ConfigVarInput` in the var's element slot (return null to hide it).
+ * - `validate` replaces the engine's default readiness for the var; return `undefined` to defer
+ *   to the default.
  */
 export interface ConfigVarPlugin {
-  /** Custom inline renderer for this var — used by the view in place of `ConfigVarInput`. */
   renderField?: ConfigVarRender;
-  /**
-   * Expand this var's host page into >=1 steps. MUST emit a stable "primary" step even when
-   * `captured` is null (its page hasn't loaded yet). The engine tags every returned step with
-   * `ownerKey = key`; the first/base step is also marked `primary`.
-   */
-  expandSteps?: (ctx: ConfigVarPluginContext) => WizardStep[];
+  validate?: ConfigVarValidate;
 }
 
 export interface UseConfigWizardOptions {
-  /**
-   * Custom renderers/expanders keyed by config-var key. Unregistered vars use standard
-   * rendering and a one-step-per-page layout. At most one plugin var per page (v1).
-   */
+  /** Custom renderers/validators keyed by config-var key. Unregistered vars use the defaults. */
   plugins?: Record<string, ConfigVarPlugin>;
 }
 
@@ -175,17 +114,15 @@ export interface ConfigWizardEngine {
   loading: boolean;
   loadError: string | null;
   data: ConfigWizardData | null;
-  steps: WizardStep[];
+  /** Index of the current config page (the wizard is one step per page). */
   stepIndex: number;
-  step: WizardStep | undefined;
   isLastStep: boolean;
-  goNext: () => void;
   goBack: () => void;
   // current page render data
   page: ConfigPage | undefined;
   pageLoading: boolean;
   pageError: string | null;
-  /** Whether page content has loaded; gate step rendering on this. */
+  /** Whether page content has loaded; gate page rendering on this. */
   contentLoaded: boolean;
   /** Fetch the pre-wired field for one config-var key on the current page. */
   field: (key: string) => WizardField | undefined;
@@ -195,6 +132,28 @@ export interface ConfigWizardEngine {
   actionError: string | null;
   deployed: boolean;
   submit: () => Promise<void>;
+  // mid-page datasource plumbing (for plugins that search/refetch in place)
+  /**
+   * Persist a subset of config vars NOW (`configComplete: false`); vars not named are
+   * untouched. Plain async passthrough — failures throw to the caller (render them
+   * inline in the step), they don't drive `busy`/`actionError`.
+   */
+  saveVars: (vars: Record<string, string>) => Promise<void>;
+  /**
+   * Run one config var's datasource server-side and resolve its parsed content.
+   * Pass ad-hoc values via `inputs` (`type: "value"`); they arrive in a
+   * code-native perform's `params` keyed by name — no need to save them first.
+   */
+  invokeDataSource: (
+    varKey: string,
+    inputs?: { name: string; type: string; value: string }[],
+  ) => Promise<unknown>;
+  /**
+   * Clear everything downstream of `varKey`'s host page: later pages' drafts plus
+   * their cached page content (removed, not merely invalidated, so a revisit fetches
+   * fresh content). Call after changing a var that upstream-feeds later datasources.
+   */
+  resetDownstream: (varKey: string) => void;
 }
 
 const errorMessage = (err: unknown): string =>
@@ -227,12 +186,6 @@ export function useConfigWizard(
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [deployed, setDeployed] = useState(false);
 
-  // Captured content for plugin config vars, keyed by config-var key. Filled once, the
-  // first time each plugin var's page loads (the schema is static). Persisted in state
-  // because plugin `expandSteps` reads it on EVERY render — even while we're on another
-  // page whose content doesn't include it.
-  const [captured, setCaptured] = useState<Record<string, CapturedConfigVar>>({});
-
   // Fixed at mount — bounds the connection-status log query's `$startedAt` window.
   const [startedAt] = useState(() => new Date().toISOString());
 
@@ -241,56 +194,11 @@ export function useConfigWizard(
     : [];
 
   // ── Step / page derivation ──────────────────────────────────────────────────
-  // Accessor handed to plugin expandSteps / each step's validate. It runs BEFORE the page query
-  // is read (the page name comes out of the steps it produces), so it resolves from edits
-  // or a plugin var's captured content — deliberately NOT from the live current page's
-  // content (see `effectiveValue` for that). The captured snapshot seeds the value lazily:
-  // the saved instance value (the manage/edit seed) first, then the schema's baked default.
-  // This precedence mirrors `effectiveValue` so validation/expansion and rendering agree.
-  const draftOf = (key: string): string | undefined => {
-    if (drafts[key] !== undefined) return drafts[key];
-    if (captured[key]) {
-      return captured[key].value ?? jsonFormData(captured[key].content) ?? "{}";
-    }
-    return undefined;
-  };
-
-  // The first config var on a page whose plugin EXPANDS the page into steps (one such var per
-  // page). A plugin with only `renderField` (no `expandSteps`) leaves the page as a normal step
-  // and just renders its var inline — so it doesn't count here.
-  const expandingKeyForPage = (page: ConfigPage): string | undefined =>
-    page.elements.find(
-      (el) => el.type === "configVar" && plugins[el.value]?.expandSteps,
-    )?.value;
-
-  // Build steps: each page is one "page" step, unless it hosts an expanding plugin var — then the
-  // plugin expands that page into >=1 steps, each tagged with `ownerKey` (the base one
-  // also `primary`). Pure + deterministic; recomputed every render.
-  const steps: WizardStep[] = pages.flatMap((page) => {
-    const key = expandingKeyForPage(page);
-    if (key) {
-      const expanded = plugins[key].expandSteps!({
-        key,
-        page,
-        captured: captured[key] ?? null,
-        draft: draftOf,
-      });
-      return expanded.map((step, i) =>
-        step.kind === "custom"
-          ? { ...step, ownerKey: key, primary: i === 0 }
-          : step,
-      );
-    }
-    return [{ kind: "page" as const, id: page.name, label: page.name, pageName: page.name }];
-  });
-
-  // Clamp every render so steps appearing/disappearing (e.g. enabling a brand) can
-  // never leave the index pointing past the end of the array.
-  const safeIndex = Math.min(stepIndex, Math.max(0, steps.length - 1));
-  const currentStep: WizardStep | undefined = steps[safeIndex];
-  const currentPageName = currentStep?.pageName;
-  const currentConfigPage = pages.find((p) => p.name === currentPageName);
-  const isLastStep = safeIndex === steps.length - 1;
+  // The wizard is exactly the config pages, one step per page. The page count is fixed
+  // once the instance loads, and `stepIndex` only moves via `goBack` / submit success.
+  const currentConfigPage: ConfigPage | undefined = pages[stepIndex];
+  const currentPageName = currentConfigPage?.name;
+  const isLastStep = pages.length > 0 && stepIndex === pages.length - 1;
 
   // The current page's computed content (picklist options, JSONFORM schema, values).
   // Keyed by page name, so navigating to an already-visited page is an instant cache hit.
@@ -300,29 +208,6 @@ export function useConfigWizard(
     enabled: authenticated && Boolean(currentPageName),
   });
   const pageContent: PageContent | null = pageQuery.data ?? null;
-
-  // Capture content for any plugin var on the current page the first time it loads. We set
-  // it during render — React's "adjust state when the inputs change" pattern — instead of
-  // in an effect: guarded against the COMMITTED `captured` map, so each key is captured at
-  // most once (a single extra render), then `draftOf`/plugin `expandSteps` pick it up next
-  // render.
-  if (pageContent && currentConfigPage) {
-    const pending: Record<string, CapturedConfigVar> = {};
-    for (const el of currentConfigPage.elements) {
-      if (el.type !== "configVar" || !plugins[el.value] || captured[el.value]) continue;
-      pending[el.value] = {
-        key: el.value,
-        pageName: currentConfigPage.name,
-        content: pageContent.content[el.value],
-        value: pageContent.configVariables.find(
-          (cv) => cv.requiredConfigVariable.key === el.value,
-        )?.value,
-      };
-    }
-    if (Object.keys(pending).length > 0) {
-      setCaptured((prev) => ({ ...prev, ...pending }));
-    }
-  }
 
   // The config vars referenced by the current page, in element order.
   const pageVars: PageConfigVariable[] =
@@ -337,9 +222,24 @@ export function useConfigWizard(
           .filter((cv): cv is PageConfigVariable => Boolean(cv))
       : [];
 
+  // Integration-level connection metadata (oauth2Type + input labels/types) for a
+  // config var, joined by key from the instance query.
+  const connectionMetaOf = (key: string) =>
+    data?.instance.integration.requiredConfigVariables.nodes.find(
+      (rcv) => rcv.key === key,
+    )?.connection ?? null;
+
+  const isKeyBasedVar = (cv: PageConfigVariable): boolean =>
+    isKeyBasedConnection(connectionMetaOf(cv.requiredConfigVariable.key), cv);
+
   // OAuth connection vars on this page — these are what we poll for "ACTIVE".
+  // Key-based connections have no authorize flow, so there's nothing to watch.
   const connectionKeys = pageVars
-    .filter((cv) => cv.requiredConfigVariable.dataType === "CONNECTION")
+    .filter(
+      (cv) =>
+        cv.requiredConfigVariable.dataType === "CONNECTION" &&
+        !isKeyBasedVar(cv),
+    )
     .map((cv) => cv.requiredConfigVariable.key);
 
   const { statuses: liveStatus } = useConnectionStatus(instanceId, {
@@ -357,9 +257,10 @@ export function useConfigWizard(
 
   // ── Draft values ─────────────────────────────────────────────────────────────
   // Effective value for a config-var key on the current page: the user's edit if
-  // present, otherwise the value seeded from page content. Falls back to `draftOf` for
-  // plugin vars (resolved from captured content). Used by the field renderer and submit —
-  // never before the page query is read. No eager seeding of the whole draft map.
+  // present, otherwise the value seeded from page content (the saved instance value —
+  // the manage/edit seed — then a JSONFORM schema's baked default). Used by the field
+  // renderer, readiness, and submit — never before the page query is read. No eager
+  // seeding of the whole draft map.
   const effectiveValue = (key: string): string | undefined => {
     if (drafts[key] !== undefined) return drafts[key];
     const cv = pageContent?.configVariables.find(
@@ -373,7 +274,7 @@ export function useConfigWizard(
           : "")
       );
     }
-    return draftOf(key);
+    return undefined;
   };
 
   const setDraft = (key: string, value: string) =>
@@ -397,9 +298,24 @@ export function useConfigWizard(
   // drive the busy / actionError flags.
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const submitVars = pageVars.map((cv) =>
-        buildConfigVarSubmit(cv, effectiveValue(cv.requiredConfigVariable.key)),
-      );
+      // Skip an untouched key-based connection: updateInstanceConfigVariables only
+      // touches the vars named in the payload, and resubmitting one whose secret
+      // inputs come back unreadable (value: null) would blank the saved secret.
+      const submitVars = pageVars
+        .filter(
+          (cv) =>
+            !(
+              cv.requiredConfigVariable.dataType === "CONNECTION" &&
+              isKeyBasedVar(cv) &&
+              drafts[cv.requiredConfigVariable.key] === undefined
+            ),
+        )
+        .map((cv) =>
+          buildConfigVarSubmit(
+            cv,
+            effectiveValue(cv.requiredConfigVariable.key),
+          ),
+        );
       await submitConfigPage({
         instanceId,
         configVariables: submitVars,
@@ -430,10 +346,67 @@ export function useConfigWizard(
         });
         setDeployed(true);
       } else {
-        setStepIndex(safeIndex + 1);
+        setStepIndex(stepIndex + 1);
       }
     },
   });
+
+  // ── Mid-page datasource plumbing ────────────────────────────────────────────
+  // Deliberately NOT useMutations: a plugin-driven save/invoke (e.g. a debounced
+  // search) owns its own pending/error UI inline; page-level busy/actionError
+  // stay reserved for Next/Back-scale actions.
+  const saveVars = async (vars: Record<string, string>): Promise<void> => {
+    await submitConfigPage({
+      instanceId,
+      configVariables: Object.entries(vars).map(([key, value]) => ({
+        key,
+        value,
+        customerConfigVariableId: null,
+        onPremiseResourceId: null,
+      })),
+      configComplete: false,
+    });
+  };
+
+  const invokeDataSource = async (
+    varKey: string,
+    inputs?: { name: string; type: string; value: string }[],
+  ): Promise<unknown> => {
+    const dataSourceId =
+      data?.instance.integration.requiredConfigVariables.nodes.find(
+        (rcv) => rcv.key === varKey,
+      )?.dataSource?.id;
+    if (!dataSourceId) {
+      throw new Error(`No datasource found for config variable "${varKey}"`);
+    }
+    return fetchDataSourceContent({ instanceId, dataSourceId, inputs });
+  };
+
+  const resetDownstream = (varKey: string): void => {
+    const hostIdx = pages.findIndex((p) =>
+      p.elements.some((el) => el.type === "configVar" && el.value === varKey),
+    );
+    if (hostIdx < 0) return;
+    const downstream = pages.slice(hostIdx + 1);
+    const keys = new Set(
+      downstream.flatMap((p) =>
+        p.elements
+          .filter((el) => el.type === "configVar")
+          .map((el) => el.value),
+      ),
+    );
+    setDrafts((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([k]) => !keys.has(k))),
+    );
+    // removeQueries, not invalidateQueries: with a 30s staleTime an invalidated
+    // page still serves its cached content synchronously on remount. Removal makes
+    // the revisit render from a fresh fetch.
+    for (const p of downstream) {
+      queryClient.removeQueries({
+        queryKey: prismaticKeys.page(instanceId, p.name),
+      });
+    }
+  };
 
   const busy = submitMutation.isPending || disconnectMutation.isPending;
   const actionError = submitMutation.error
@@ -447,6 +420,7 @@ export function useConfigWizard(
   const toField = (cv: PageConfigVariable): WizardField => {
     const key = cv.requiredConfigVariable.key;
     const content = pageContent?.content[key];
+    const isConnection = cv.requiredConfigVariable.dataType === "CONNECTION";
     return {
       key,
       label: key,
@@ -455,9 +429,17 @@ export function useConfigWizard(
       onChange: (next) => setDraft(key, next),
       status: statusOfKey(key),
       content,
-      options: asPicklistOptions(content),
+      options: parsePicklistContent(content),
       authorizeUrl: cv.authorizeUrl,
       onDisconnect: () => disconnectMutation.mutate(cv),
+      connection: isConnection
+        ? isKeyBasedVar(cv)
+          ? {
+              isOAuth2: false,
+              inputs: joinConnectionInputs(connectionMetaOf(key), cv),
+            }
+          : { isOAuth2: true, inputs: [] }
+        : undefined,
     };
   };
 
@@ -469,47 +451,40 @@ export function useConfigWizard(
   };
 
   // ── Readiness / navigation ─────────────────────────────────────────────────────
-  // Whether the current step is satisfied enough to advance. A plugin-owned step defers
-  // to its own `validate`; the page's standard (non-plugin) vars are gated by the engine
-  // default. A plain "page" step uses the default for all of its vars.
+  // Whether the current page is satisfied enough to advance: every var passes its
+  // plugin's `validate` when one is registered (and returns a verdict), otherwise the
+  // engine default below.
   const varReady = (cv: PageConfigVariable): boolean => {
     const key = cv.requiredConfigVariable.key;
     if (cv.requiredConfigVariable.dataType === "CONNECTION") {
+      // Key-based: satisfied once every required input has a value — the typed
+      // draft if the user edited it, otherwise a saved server value (secrets
+      // report hasValue with a null value). OAuth2: the authorize flow must
+      // have completed.
+      if (isKeyBasedVar(cv)) {
+        const draftMap = parseConnectionDraft(drafts[key]);
+        return joinConnectionInputs(connectionMetaOf(key), cv)
+          .filter((input) => input.required)
+          .every((input) =>
+            draftMap[input.name] !== undefined
+              ? draftMap[input.name].trim().length > 0
+              : Boolean(input.serverValue) || input.hasValue,
+          );
+      }
       return statusOfKey(key) === "ACTIVE";
     }
     return (effectiveValue(key) ?? "").trim().length > 0;
   };
-  // Default readiness over the page's vars, optionally skipping vars whose plugin expands the page
-  // into its own (separately-gated) steps. A renderField-only var is gated normally.
-  const defaultReady = (skipExpandingVars = false): boolean => {
-    if (!pageContent || !currentStep) return false;
-    return pageVars.every(
-      (cv) =>
-        (skipExpandingVars &&
-          Boolean(plugins[cv.requiredConfigVariable.key]?.expandSteps)) ||
-        varReady(cv),
-    );
+  const varReadyWithPlugin = (cv: PageConfigVariable): boolean => {
+    const verdict = plugins[cv.requiredConfigVariable.key]?.validate?.({
+      field: toField(cv),
+    });
+    return verdict ?? varReady(cv);
   };
-  const ready = (() => {
-    if (!pageContent || !currentStep) return false;
-    const ownerKey =
-      currentStep.kind === "custom" ? currentStep.ownerKey : undefined;
-    if (ownerKey && currentStep.kind === "custom") {
-      // A custom step's own readiness comes from its `validate` (or the engine default).
-      const stepReady =
-        currentStep.validate?.({
-          key: ownerKey,
-          step: currentStep,
-          draft: draftOf,
-          statusOf: statusOfKey,
-        }) ?? defaultReady(true);
-      // The primary step also hosts the page's standard vars — gate on those too.
-      return currentStep.primary === true
-        ? stepReady && defaultReady(true)
-        : stepReady;
-    }
-    return defaultReady();
-  })();
+  const ready =
+    pageContent !== null &&
+    currentConfigPage !== undefined &&
+    pageVars.every(varReadyWithPlugin);
 
   // Once every watched connection on this page is ACTIVE, refresh the page's content so
   // its baked status + authorize URL match reality; the effect only fires on the transition.
@@ -534,18 +509,14 @@ export function useConfigWizard(
   };
 
   const goBack = () => setStepIndex((i) => Math.max(0, i - 1));
-  const goNext = () => setStepIndex((i) => i + 1);
 
   return {
     authenticated,
     loading: !data,
     loadError: instanceQuery.error ? errorMessage(instanceQuery.error) : null,
     data,
-    steps,
-    stepIndex: safeIndex,
-    step: currentStep,
+    stepIndex,
     isLastStep,
-    goNext,
     goBack,
     page: currentConfigPage,
     pageLoading: pageQuery.isLoading,
@@ -557,16 +528,8 @@ export function useConfigWizard(
     actionError,
     deployed,
     submit,
+    saveVars,
+    invokeDataSource,
+    resetDownstream,
   };
-}
-
-/** Read PICKLIST options out of a config var's baked content ([] for other types). */
-function asPicklistOptions(content: unknown): PicklistOption[] {
-  if (Array.isArray(content)) {
-    return content.filter(
-      (o): o is PicklistOption =>
-        typeof o === "object" && o !== null && "key" in o && "label" in o,
-    );
-  }
-  return [];
 }

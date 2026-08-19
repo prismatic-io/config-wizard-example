@@ -9,8 +9,9 @@
 // "Configuration" var) build their own parser on top of these helpers.
 //
 // No soft fallbacks: a node we can't render faithfully yields `null`, and the caller
-// shows the raw-JSON escape hatch rather than guessing. Display options live in ONE place
-// (the `options` extension); `enum` carries the values for validation only.
+// shows the raw-JSON escape hatch rather than guessing. Display options come from the
+// `options` extension or standard `oneOf [{const,title}]` pairs; a bare `enum` carries
+// values for validation only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { JsonSchema7 } from "@jsonforms/core";
@@ -58,9 +59,82 @@ export function jsonFormData(content: unknown): string | undefined {
   return data === undefined ? undefined : JSON.stringify(data, null, 2);
 }
 
-/** A picklist's display options come from the `options` extension — and only there. */
+/** Pull the `{ uiSchema }` out of a JSONForm page-content entry. */
+export function jsonFormUiSchema(content: unknown): unknown {
+  return parseFormContent(content)?.uiSchema;
+}
+
+/** One cell of a uiSchema-declared table: static text, or a top-level control by property key. */
+export type UiTableCell =
+  | { kind: "label"; text: string }
+  | { kind: "control"; key: string };
+
+/** A row-wise table declared by a uiSchema (see `parseUiTable`). */
+export interface UiTable {
+  /** Column headings, when the first row was all labels. */
+  header: string[] | null;
+  rows: UiTableCell[][];
+}
+
+function uiTableCell(el: unknown): UiTableCell | null {
+  const node = el as { type?: unknown; text?: unknown; scope?: unknown };
+  if (node?.type === "Label" && typeof node.text === "string") {
+    return { kind: "label", text: node.text };
+  }
+  if (node?.type === "Control" && typeof node.scope === "string") {
+    const key = /^#\/properties\/([^/]+)$/.exec(node.scope)?.[1];
+    return key ? { kind: "control", key } : null;
+  }
+  return null;
+}
+
+/**
+ * Parse a uiSchema that declares a table row-wise: a VerticalLayout whose elements are ALL
+ * HorizontalLayouts of Label / top-level-Control cells. The first all-label row becomes the
+ * column header. Anything else returns `null` (same no-soft-fallback contract as the schema
+ * parser), and the caller renders the schema's fields the ordinary way.
+ */
+export function parseUiTable(content: unknown): UiTable | null {
+  const ui = jsonFormUiSchema(content) as { type?: unknown; elements?: unknown };
+  if (ui?.type !== "VerticalLayout" || !Array.isArray(ui.elements) || ui.elements.length === 0) {
+    return null;
+  }
+  const rows: UiTableCell[][] = [];
+  for (const el of ui.elements) {
+    const row = el as { type?: unknown; elements?: unknown };
+    if (row?.type !== "HorizontalLayout" || !Array.isArray(row.elements) || row.elements.length === 0) {
+      return null;
+    }
+    const cells: UiTableCell[] = [];
+    for (const cell of row.elements) {
+      const parsed = uiTableCell(cell);
+      if (!parsed) return null;
+      cells.push(parsed);
+    }
+    rows.push(cells);
+  }
+  const hasHeader = rows.length > 1 && rows[0].every((c) => c.kind === "label");
+  const header = hasHeader
+    ? (rows.shift() as Extract<UiTableCell, { kind: "label" }>[]).map((c) => c.text)
+    : null;
+  return { header, rows };
+}
+
+/**
+ * A picklist's display options: the `options` extension when present, else standard JSON-Schema
+ * `oneOf [{const,title}]` pairs. All-or-nothing on `oneOf` — one entry without a string
+ * const+title and the node has no faithful options (the escape hatch handles it).
+ */
 export function nodeOptions(node: WizardSchema | undefined): PicklistOption[] {
-  return node?.options ?? [];
+  if (node?.options) return node.options;
+  if (!Array.isArray(node?.oneOf) || node.oneOf.length === 0) return [];
+  const options: PicklistOption[] = [];
+  for (const entry of node.oneOf) {
+    const { const: value, title } = entry as { const?: unknown; title?: unknown };
+    if (typeof value !== "string" || typeof title !== "string") return [];
+    options.push({ key: value, label: title });
+  }
+  return options;
 }
 
 /** A leaf control kind the wizard's controls support. */
@@ -86,9 +160,9 @@ function leafKind(node: WizardSchema): FieldKind | null {
     case "array":
       return "array";
     case "string":
-      if (node.options?.length) return "enum";
+      if (nodeOptions(node).length) return "enum";
       // A constrained string with no display labels can't be rendered as a faithful picklist.
-      if (node.enum?.length) return null;
+      if (node.enum?.length || node.oneOf?.length) return null;
       return "string";
     default:
       return null;

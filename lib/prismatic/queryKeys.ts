@@ -18,6 +18,9 @@ export const prismaticKeys = {
   /** One config page's computed content (picklist options, JSONFORM schema, values). */
   page: (instanceId: string, pageName: string) =>
     ["prismatic", "page", instanceId, pageName] as const,
+  /** One on-demand datasource invocation, keyed by the input that produced it. */
+  dataSource: (instanceId: string, varKey: string, input: string) =>
+    ["prismatic", "datasource", instanceId, varKey, input] as const,
   /** Live OAuth connection statuses for an instance (polled). */
   connectionStatuses: (instanceId: string, startedAt: string) =>
     ["prismatic", "connection-statuses", instanceId, startedAt] as const,

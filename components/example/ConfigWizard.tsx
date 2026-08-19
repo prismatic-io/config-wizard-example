@@ -7,10 +7,9 @@ import {
   type ConfigVarPlugin,
   type ConfigWizardEngine,
 } from "@/hooks/useConfigWizard";
-import { CONFIGURATION_KEY, configurationPlugin } from "@/components/example/configurationPlugin";
+import { OWNER_MAPPING_KEY, ownerMappingPlugin } from "@/components/example/ownerMappingPlugin";
 import { ConfigVarInput } from "@/components/wizard/fields/ConfigVarInput";
 import { Shell } from "@/components/wizard/chrome/Shell";
-import { Stepper } from "@/components/wizard/chrome/Stepper";
 import { Loading } from "@/components/wizard/chrome/Loading";
 import { ErrorBox } from "@/components/wizard/chrome/ErrorBox";
 
@@ -19,19 +18,19 @@ interface ConfigWizardProps {
 }
 
 /**
- * The wizard's plugin registry — the single source of truth for both halves of the plugin model:
- * the engine reads `expandSteps` (step expansion + per-step validation) and the view reads
- * `renderField` / each step's `render`. Add an integration's plugins here.
+ * The wizard's plugin registry — per-config-var overrides for rendering (`renderField`)
+ * and readiness (`validate`). The engine reads `validate`; the view reads `renderField`.
+ * Add an integration's plugins here.
  */
 const plugins: Record<string, ConfigVarPlugin> = {
-  [CONFIGURATION_KEY]: configurationPlugin,
+  [OWNER_MAPPING_KEY]: ownerMappingPlugin,
 };
 
 /**
- * Interactive, multi-step config wizard. All Prismatic state lives in `useConfigWizard`;
- * this component renders from the engine and registers the "Configuration" plugin (which
- * expands its page into a category-selection step + one delivery step per enabled category).
- * Every other config var renders with the engine's standard per-dataType field.
+ * Interactive, multi-step config wizard — one step per config page. All Prismatic state
+ * lives in `useConfigWizard`; this component renders from the engine. A config var with a
+ * registered plugin draws with the plugin's `renderField`; every other var renders with
+ * the engine's standard per-dataType field.
  */
 export function ConfigWizard({ instanceId }: ConfigWizardProps) {
   const wizard = useConfigWizard(instanceId, { plugins });
@@ -72,7 +71,7 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
           </div>
           <div>
             <h3 className="text-lg font-semibold">{instance.name} deployed</h3>
-            <p className="mt-1 text-sm text-white/50">
+            <p className="mt-1 text-sm text-neutral-500">
               The instance was configured and deployed for {instance.customer.name}.
             </p>
           </div>
@@ -87,19 +86,29 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
     );
   }
 
-  const showStep =
-    !wizard.pageLoading && !wizard.pageError && wizard.contentLoaded && Boolean(wizard.step);
+  const showPage =
+    !wizard.pageLoading && !wizard.pageError && wizard.contentLoaded && Boolean(wizard.page);
 
   return (
     <Shell title={`Create ${instance.name}`}>
       <div className="flex min-h-[28rem] flex-col">
-        <Stepper steps={wizard.steps} stepIndex={wizard.stepIndex} />
+        {wizard.page && (
+          <div className="px-6 pb-2 pt-8">
+            <h2 className="pr-8 text-2xl font-semibold tracking-tight text-neutral-900">
+              {`Step ${wizard.stepIndex + 1}: ${wizard.page.name}`}
+            </h2>
+          </div>
+        )}
 
-        <div className="flex flex-1 flex-col px-6 py-6">
+        <div className="flex flex-1 flex-col px-6 py-4">
           {wizard.pageLoading && <Loading>Loading page…</Loading>}
           {wizard.pageError && <ErrorBox>{wizard.pageError}</ErrorBox>}
 
-          {showStep && <StepBody wizard={wizard} />}
+          {showPage && (
+            <div className="flex flex-col gap-4">
+              <PageElements wizard={wizard} />
+            </div>
+          )}
 
           {wizard.actionError && (
             <div className="mt-4">
@@ -107,15 +116,15 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
             </div>
           )}
 
-          {showStep && !wizard.ready && (
-            <p className="mt-4 text-xs text-amber-400">
+          {showPage && !wizard.ready && (
+            <p className="mt-4 text-xs text-amber-600">
               Complete the required fields on this page to continue.
             </p>
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-white/10 px-6 py-4">
-          <Link href="/integrations" className="text-sm text-white/50 hover:text-white/80">
+        <div className="flex items-center justify-between border-t border-neutral-200 px-6 py-4">
+          <Link href="/integrations" className="text-sm text-neutral-500 hover:text-neutral-700">
             Discard
           </Link>
           <div className="flex items-center gap-3">
@@ -123,7 +132,7 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
               <button
                 onClick={wizard.goBack}
                 disabled={wizard.busy}
-                className="rounded-md border border-white/15 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:opacity-40"
+                className="rounded-md border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-40"
               >
                 Back
               </button>
@@ -131,7 +140,7 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
             <button
               onClick={() => void wizard.submit()}
               disabled={wizard.busy || wizard.pageLoading || !wizard.ready}
-              className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40"
+              className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
             >
               {wizard.busy ? "Working…" : wizard.isLastStep ? "Create" : "Next"}
             </button>
@@ -146,30 +155,23 @@ export function ConfigWizard({ instanceId }: ConfigWizardProps) {
  * Standard rendering of a page's elements in order — HTML blurbs + one input per config var. A var
  * whose plugin supplies a `renderField` is drawn with it; everything else uses `ConfigVarInput`.
  */
-function PageElements({
-  wizard,
-  excludeKey,
-}: {
-  wizard: ConfigWizardEngine;
-  excludeKey?: string;
-}) {
+function PageElements({ wizard }: { wizard: ConfigWizardEngine }) {
   if (!wizard.page) return null;
   return (
     <>
       {wizard.page.elements.map((el, i) => {
         if (el.type === "htmlElement") {
           return (
-            <p key={i} className="text-sm text-white/70">
+            <p key={i} className="text-sm text-neutral-600">
               {el.value}
             </p>
           );
         }
         if (el.type === "configVar") {
-          if (el.value === excludeKey) return null;
           const f = wizard.field(el.value);
           if (!f) {
             return (
-              <p key={i} className="text-sm text-white/40">
+              <p key={i} className="text-sm text-neutral-400">
                 {el.value} — not found
               </p>
             );
@@ -186,37 +188,5 @@ function PageElements({
         return null;
       })}
     </>
-  );
-}
-
-/** Renders the body for the current step (a plugin step's own UI, or a standard page). */
-function StepBody({ wizard }: { wizard: ConfigWizardEngine }) {
-  const step = wizard.step;
-  if (!step) return null;
-
-  // A plugin-owned custom step draws its OWN `render`. The page's base ("primary") step also hosts
-  // the page's other (non-plugin) vars via standard rendering.
-  if (step.kind === "custom" && step.ownerKey) {
-    const field = wizard.field(step.ownerKey);
-    return (
-      <div className="flex flex-col gap-4">
-        {step.primary && wizard.page?.tagline && (
-          <p className="text-sm text-white/50">{wizard.page.tagline}</p>
-        )}
-        {step.render({ wizard, step, field })}
-        {step.primary && <PageElements wizard={wizard} excludeKey={step.ownerKey} />}
-      </div>
-    );
-  }
-
-  // Standard page: render its elements in order.
-  if (!wizard.page) return null;
-  return (
-    <div className="flex flex-col gap-4">
-      {wizard.page.tagline && (
-        <p className="text-sm text-white/50">{wizard.page.tagline}</p>
-      )}
-      <PageElements wizard={wizard} />
-    </div>
   );
 }

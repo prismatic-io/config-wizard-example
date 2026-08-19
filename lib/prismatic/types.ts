@@ -35,6 +35,7 @@ export interface InputField {
   comments: string | null;
   default: string | null;
   placeholder: string | null;
+  example: string | null;
 }
 
 export interface WizardComponent {
@@ -110,6 +111,9 @@ export interface WizardIntegration {
   configPages: string | null;
   avatarUrl: string | null;
   versionNumber: number;
+  /** Carries each datasource-backed config var's Action id (dataSource.id) —
+   * the handle fetchDataSourceContent needs to run one datasource on demand. */
+  requiredConfigVariables: Node<RequiredConfigVariable>;
 }
 
 export interface WizardInstance {
@@ -155,7 +159,26 @@ export interface ExpressionInput {
   id: string;
   name: string;
   value: string | null;
+  hasValue: boolean | null;
   type: string;
+}
+
+/**
+ * One customer-editable input of a key-based connection: the page-level value
+ * (`ExpressionInput`) joined to its integration-level metadata (`InputField`)
+ * by `InputField.key` ↔ `ExpressionInput.name`.
+ */
+export interface ConnectionInputDescriptor {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  comments: string | null;
+  example: string | null;
+  placeholder: string | null;
+  serverValue: string | null;
+  /** True when a value is saved server-side even if `serverValue` is null (secrets). */
+  hasValue: boolean;
 }
 
 /** A config variable as returned by fetchConfigWizardPageContent (lean shape). */
